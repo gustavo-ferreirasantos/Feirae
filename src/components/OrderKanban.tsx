@@ -1,0 +1,295 @@
+'use client';
+
+import React, { useState } from 'react';
+import { 
+  Clock, 
+  PackageCheck, 
+  CheckCircle, 
+  Truck, 
+  AlertTriangle, 
+  ChevronRight, 
+  User, 
+  Phone, 
+  MapPin,
+  Calendar,
+  XCircle,
+  Loader2,
+  Ban,
+  Eye,
+  EyeOff
+} from 'lucide-react';
+import { Order, OrderStatus } from '@/types';
+import { formatCurrency, formatDate } from '@/lib/utils';
+
+interface OrderKanbanProps {
+  orders: Order[];
+  onUpdateStatus: (orderId: string, status: OrderStatus) => Promise<void>;
+}
+
+export function OrderKanban({ orders, onUpdateStatus }: OrderKanbanProps) {
+  const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null);
+  const [showCancelled, setShowCancelled] = useState(false);
+
+  const columns: Array<{
+    status: OrderStatus;
+    title: string;
+    description: string;
+    icon: React.ElementType;
+    color: string;
+    bgColor: string;
+    borderColor: string;
+  }> = [
+    {
+      status: 'NOVO',
+      title: 'Novos Pré-pedidos',
+      description: 'Aguardando confirmação',
+      icon: Clock,
+      color: 'text-amber-700',
+      bgColor: 'bg-amber-50/70',
+      borderColor: 'border-amber-200',
+    },
+    {
+      status: 'EM_PREPARO',
+      title: 'Em Preparo / Embalando',
+      description: 'Sendo separados na barraca',
+      icon: PackageCheck,
+      color: 'text-blue-700',
+      bgColor: 'bg-blue-50/70',
+      borderColor: 'border-blue-200',
+    },
+    {
+      status: 'PRONTO',
+      title: 'Pronto para Retirada',
+      description: 'Aguardando cliente na barraca',
+      icon: CheckCircle,
+      color: 'text-emerald-700',
+      bgColor: 'bg-emerald-50/70',
+      borderColor: 'border-emerald-200',
+    },
+    {
+      status: 'RETIRADO',
+      title: 'Retirados / Concluídos',
+      description: 'Entregues com sucesso',
+      icon: Truck,
+      color: 'text-stone-700',
+      bgColor: 'bg-stone-100/70',
+      borderColor: 'border-stone-200',
+    },
+  ];
+
+  const cancelledOrders = orders.filter(o => o.status?.toUpperCase() === 'CANCELADO');
+
+  const handleAdvance = async (order: Order) => {
+    let nextStatus: OrderStatus | null = null;
+    const current = order.status?.toUpperCase();
+    if (current === 'NOVO') nextStatus = 'EM_PREPARO';
+    else if (current === 'EM_PREPARO') nextStatus = 'PRONTO';
+    else if (current === 'PRONTO') nextStatus = 'RETIRADO';
+
+    if (nextStatus) {
+      setLoadingOrderId(order.id);
+      try {
+        await onUpdateStatus(order.id, nextStatus);
+      } finally {
+        setLoadingOrderId(null);
+      }
+    }
+  };
+
+  const handleCancel = async (orderId: string) => {
+    if (confirm('Deseja realmente cancelar este pedido? O estoque dos produtos será estornado automaticamente no sistema.')) {
+      setLoadingOrderId(orderId);
+      try {
+        await onUpdateStatus(orderId, 'CANCELADO');
+      } finally {
+        setLoadingOrderId(null);
+      }
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      
+      {/* Top Bar with Cancelled Orders Toggle */}
+      {cancelledOrders.length > 0 && (
+        <div className="flex justify-end">
+          <button
+            onClick={() => setShowCancelled(!showCancelled)}
+            className="px-3 py-1.5 rounded-xl border border-stone-200 hover:border-stone-300 bg-white hover:bg-stone-50 text-xs font-semibold text-stone-600 transition flex items-center gap-1.5 shadow-2xs"
+          >
+            {showCancelled ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+            <span>{showCancelled ? 'Ocultar' : 'Exibir'} Pedidos Cancelados ({cancelledOrders.length})</span>
+          </button>
+        </div>
+      )}
+
+      {/* Kanban Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+        {columns.map(col => {
+          const columnOrders = orders.filter(o => o.status?.toUpperCase() === col.status);
+          const IconComponent = col.icon;
+
+          return (
+            <div
+              key={col.status}
+              className={`rounded-2xl border ${col.borderColor} ${col.bgColor} p-3 flex flex-col min-h-[520px]`}
+            >
+              {/* Column Header */}
+              <div className="flex items-center justify-between pb-3 border-b border-stone-200/60 mb-3">
+                <div className="flex items-center gap-2">
+                  <div className={`p-1.5 rounded-lg bg-white shadow-xs ${col.color}`}>
+                    <IconComponent className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="font-bold text-xs text-stone-900 leading-tight">{col.title}</h4>
+                    <p className="text-[10px] text-stone-500">{col.description}</p>
+                  </div>
+                </div>
+                <span className="px-2 py-0.5 rounded-full text-xs font-extrabold bg-white shadow-xs text-stone-800">
+                  {columnOrders.length}
+                </span>
+              </div>
+
+              {/* Orders Stack */}
+              <div className="flex-1 space-y-3 overflow-y-auto max-h-[700px] pr-1">
+                {columnOrders.length === 0 ? (
+                  <div className="h-40 flex items-center justify-center text-center p-4 text-xs text-stone-400">
+                    Nenhum pedido nesta etapa
+                  </div>
+                ) : (
+                  columnOrders.map(order => (
+                    <div
+                      key={order.id}
+                      className="bg-white rounded-2xl p-4 border border-stone-200 shadow-xs hover:shadow-md transition-all flex flex-col gap-2.5"
+                    >
+                      {/* Header Card */}
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <span className="text-[11px] font-mono font-bold text-feira-800 bg-feira-100 px-2 py-0.5 rounded-md">
+                            #{order.orderNumber}
+                          </span>
+                          <div className="text-[10px] text-stone-400 mt-1">
+                            {formatDate(order.createdAt)}
+                          </div>
+                        </div>
+                        <span className="text-sm font-extrabold text-stone-900">
+                          {formatCurrency(order.totalAmount)}
+                        </span>
+                      </div>
+
+                      {/* Client Details */}
+                      <div className="text-xs space-y-1 py-1.5 border-y border-stone-100">
+                        <div className="flex items-center gap-1.5 font-semibold text-stone-800">
+                          <User className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                          <span className="truncate">{order.clientName}</span>
+                        </div>
+                        {order.clientPhone && (
+                          <div className="flex items-center gap-1.5 text-stone-500 text-[11px]">
+                            <Phone className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                            <span>{order.clientPhone}</span>
+                          </div>
+                        )}
+                        <div className="flex items-center gap-1.5 text-stone-500 text-[11px]">
+                          <Calendar className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                          <span className="truncate">Retirada: {order.pickupDate}</span>
+                        </div>
+                      </div>
+
+                      {/* Items Summary */}
+                      {order.items && order.items.length > 0 && (
+                        <div className="text-[11px] text-stone-600 bg-stone-50 p-2.5 rounded-xl space-y-1 border border-stone-100">
+                          <div className="font-semibold text-[10px] uppercase tracking-wider text-stone-400 mb-1">
+                            Itens do Pedido:
+                          </div>
+                          {order.items.map(item => (
+                            <div key={item.id} className="flex justify-between gap-1">
+                              <span className="truncate max-w-[160px]">
+                                {item.quantity}x {item.productName}
+                              </span>
+                              <span className="font-semibold text-stone-700 shrink-0">
+                                {formatCurrency(item.subtotal || item.unitPrice * item.quantity)}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Payment Tag */}
+                      <div className="flex items-center justify-between text-[10px] pt-1">
+                        <span className="text-stone-400 font-medium">Pagamento:</span>
+                        <span className={`font-semibold px-2 py-0.5 rounded-full ${
+                          order.paymentStatus === 'SIMULADO_APROVADO'
+                            ? 'bg-sky-100 text-sky-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {order.paymentStatus === 'SIMULADO_APROVADO' ? '✓ MP Pago' : 'Presencial na Retirada'}
+                        </span>
+                      </div>
+
+                      {/* Actions */}
+                      {order.status?.toUpperCase() !== 'RETIRADO' && order.status?.toUpperCase() !== 'CANCELADO' && (
+                        <div className="pt-2 flex gap-1.5">
+                          <button
+                            onClick={() => handleCancel(order.id)}
+                            disabled={loadingOrderId === order.id}
+                            className="px-2.5 py-2 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 text-[11px] font-semibold transition flex items-center justify-center shrink-0 cursor-pointer"
+                            title="Cancelar pedido e estornar estoque"
+                          >
+                            <XCircle className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleAdvance(order)}
+                            disabled={loadingOrderId === order.id}
+                            className="flex-1 py-2 px-3 rounded-xl bg-feira-600 hover:bg-feira-700 text-white text-xs font-bold shadow-xs transition flex items-center justify-center gap-1.5 disabled:opacity-70 cursor-pointer"
+                          >
+                            {loadingOrderId === order.id ? (
+                              <Loader2 className="w-4 h-4 animate-spin" />
+                            ) : (
+                              <>
+                                <span>
+                                  {order.status?.toUpperCase() === 'NOVO' && 'Iniciar Preparo'}
+                                  {order.status?.toUpperCase() === 'EM_PREPARO' && 'Marcar Pronto'}
+                                  {order.status?.toUpperCase() === 'PRONTO' && 'Confirmar Retirada'}
+                                </span>
+                                <ChevronRight className="w-3.5 h-3.5" />
+                              </>
+                            )}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Cancelled Orders Drawer / Section */}
+      {showCancelled && cancelledOrders.length > 0 && (
+        <div className="mt-6 p-5 rounded-2xl bg-red-50/50 border border-red-200">
+          <div className="flex items-center gap-2 mb-3">
+            <Ban className="w-4 h-4 text-red-600" />
+            <h4 className="font-bold text-sm text-red-900">Histórico de Pedidos Cancelados</h4>
+            <span className="text-xs text-red-600 font-medium">(Estoque estornado automaticamente)</span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+            {cancelledOrders.map(order => (
+              <div key={order.id} className="bg-white p-3 rounded-xl border border-red-100 shadow-2xs space-y-1.5 text-xs">
+                <div className="flex justify-between font-bold text-stone-800">
+                  <span>#{order.orderNumber}</span>
+                  <span className="text-red-600 font-extrabold">{formatCurrency(order.totalAmount)}</span>
+                </div>
+                <div className="text-[11px] text-stone-500">{order.clientName} • {formatDate(order.createdAt)}</div>
+                <div className="text-[10px] text-stone-400">{order.items?.length || 0} itens estornados</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}
