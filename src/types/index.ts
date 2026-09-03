@@ -1,0 +1,120 @@
+export type Role = 'CLIENT' | 'VENDOR' | 'ADMIN';
+
+export type OrderStatus = 'NOVO' | 'EM_PREPARO' | 'PRONTO' | 'RETIRADO' | 'CANCELADO';
+
+export type PaymentMethod = 'RETIRADA' | 'MERCADO_PAGO_PIX' | 'MERCADO_PAGO_CARTAO';
+
+export type PaymentStatus = 'PENDENTE' | 'SIMULADO_APROVADO' | 'PAGO_NA_RETIRADA' | 'CANCELADO';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  phone?: string;
+  role: Role;
+}
+
+export interface Vendor {
+  id: string;
+  userId: string;
+  businessName: string;
+  slug: string;
+  description: string;
+  category: string;
+  fairLocation: string;
+  boothNumber?: string;
+  coverImage?: string;
+  avatar?: string;
+  rating: number;
+  ratingCount: number;
+  isSubscriber: boolean;
+  commissionRate: number;
+  active: boolean;
+}
+
+export interface Product {
+  id: string;
+  vendorId: string;
+  vendorName?: string;
+  name: string;
+  description: string;
+  category: string;
+  unit: string;
+  price: number;
+  stock: number;
+  imageUrl?: string;
+  isOrganic: boolean;
+  isActive: boolean;
+}
+
+export interface PickupWindow {
+  id: string;
+  vendorId: string;
+  dayOfWeek: string;
+  startTime: string;
+  endTime: string;
+  location: string;
+  maxOrders: number;
+  active: boolean;
+}
+
+export interface OrderItem {
+  id: string;
+  orderId: string;
+  productId: string;
+  productName: string;
+  productUnit: string;
+  unitPrice: number;
+  quantity: number;
+  subtotal: number;
+}
+
+export interface Order {
+  id: string;
+  orderNumber: string;
+  clientId: string;
+  clientName: string;
+  clientPhone: string;
+  clientEmail: string;
+  vendorId: string;
+  vendorName?: string;
+  totalAmount: number;
+  status: OrderStatus;
+  paymentMethod: PaymentMethod;
+  paymentStatus: PaymentStatus;
+  mpPaymentId?: string;
+  pickupWindowId?: string;
+  pickupDate: string;
+  pickupLocation: string;
+  notes?: string;
+  createdAt: string;
+  items: OrderItem[];
+  review?: Review;
+}
+
+export interface Review {
+  id: string;
+  orderId: string;
+  vendorId: string;
+  clientId: string;
+  clientName: string;
+  rating: number;
+  comment?: string;
+  createdAt: string;
+}
+
+export interface Notification {
+  id: string;
+  userId: string;
+  title: string;
+  message: string;
+  type: 'ORDER_STATUS' | 'NEW_ORDER' | 'ORDER_CANCELLED' | 'SYSTEM';
+  orderId?: string;
+  read: boolean;
+  createdAt: string;
+}
+
+export interface CartItem {
+  product: Product;
+  quantity: number;
+}

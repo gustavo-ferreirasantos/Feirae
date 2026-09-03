@@ -1,0 +1,176 @@
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  CLIENT
+  VENDOR
+  ADMIN
+}
+
+enum OrderStatus {
+  NOVO
+  EM_PREPARO
+  PRONTO
+  RETIRADO
+  CANCELADO
+}
+
+enum PaymentMethod {
+  RETIRADA
+  MERCADO_PAGO_PIX
+  MERCADO_PAGO_CARTAO
+}
+
+enum PaymentStatus {
+  PENDENTE
+  SIMULADO_APROVADO
+  PAGO_NA_RETIRADA
+  CANCELADO
+}
+
+model User {
+  id            String         @id @default(cuid())
+  name          String
+  email         String         @unique
+  phone         String?
+  passwordHash  String?
+  role          Role           @default(CLIENT)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  vendor        Vendor?
+  orders        Order[]        @relation("ClientOrders")
+  reviews       Review[]
+  notifications Notification[]
+}
+
+model Vendor {
+  id             String         @id @default(cuid())
+  userId         String         @unique
+  user           User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  businessName   String
+  slug           String         @unique
+  description    String
+  category       String
+  fairLocation   String
+  boothNumber    String?
+  coverImage     String?
+  avatar         String?
+  rating         Float          @default(5.0)
+  ratingCount    Int            @default(0)
+  isSubscriber   Boolean        @default(false)
+  commissionRate Float          @default(0.05)
+  active         Boolean        @default(true)
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  products       Product[]
+  orders         Order[]
+  pickupWindows  PickupWindow[]
+  reviews        Review[]
+}
+
+model Product {
+  id          String      @id @default(cuid())
+  vendorId    String
+  vendor      Vendor      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  name        String
+  description String
+  category    String
+  unit        String      @default("kg")
+  price       Float
+  stock       Int         @default(0)
+  imageUrl    String?
+  isOrganic   Boolean     @default(false)
+  isActive    Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  orderItems  OrderItem[]
+}
+
+model PickupWindow {
+  id            String   @id @default(cuid())
+  vendorId      String
+  vendor        Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  dayOfWeek     String
+  startTime     String
+  endTime       String
+  location      String
+  maxOrders     Int      @default(30)
+  active        Boolean  @default(true)
+
+  orders        Order[]
+}
+
+model Order {
+  id             String         @id @default(cuid())
+  orderNumber    String         @unique
+  clientId       String
+  client         User           @relation("ClientOrders", fields: [clientId], references: [id])
+  clientName     String
+  clientPhone    String
+  clientEmail    String
+  vendorId       String
+  vendor         Vendor         @relation(fields: [vendorId], references: [id])
+  totalAmount    Float
+  status         OrderStatus    @default(NOVO)
+  paymentMethod  PaymentMethod  @default(RETIRADA)
+  paymentStatus  PaymentStatus  @default(PENDENTE)
+  mpPaymentId    String?
+  pickupWindowId String?
+  pickupWindow   PickupWindow?  @relation(fields: [pickupWindowId], references: [id])
+  pickupDate     String
+  pickupLocation String
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  items          OrderItem[]
+  review         Review?
+}
+
+model OrderItem {
+  id          String   @id @default(cuid())
+  orderId     String
+  order       Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  productName String
+  productUnit String
+  unitPrice   Float
+  quantity    Int
+  subtotal    Float
+}
+
+model Review {
+  id         String   @id @default(cuid())
+  orderId    String   @unique
+  order      Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  vendorId   String
+  vendor     Vendor   @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  clientId   String
+  client     User     @relation(fields: [clientId], references: [id])
+  clientName String
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title     String
+  message   String
+  type      String
+  orderId   String?
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+}

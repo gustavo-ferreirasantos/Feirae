@@ -1,0 +1,22 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-stone-50 text-stone-900 antialiased selection:bg-feira-200 selection:text-feira-900;
+  }
+}
+
+.bg-pattern {
+  background-color: #fcfbf9;
+  background-image: radial-gradient(#2a8d6b 0.5px, transparent 0.5px), radial-gradient(#2a8d6b 0.5px, #fcfbf9 0.5px);
+  background-size: 20px 20px;
+  background-position: 0 0, 10px 10px;
+  background-opacity: 0.05;
+}
+
+/* Custom smooth transitions */
+.transition-smooth {
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
