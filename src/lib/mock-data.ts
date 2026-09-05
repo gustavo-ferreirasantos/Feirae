@@ -12,7 +12,7 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user-vendor-1',
     name: 'José Pereira (Zé dos Orgânicos)',
-    email: 'ze.organicos@feiralocal.com',
+    email: 'ze.organicos@feirae.com',
     phone: '(87) 99801-8279',
     whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
@@ -20,7 +20,7 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user-vendor-2',
     name: 'Dona Neusa (Doces da Vovó)',
-    email: 'neusa.doces@feiralocal.com',
+    email: 'neusa.doces@feirae.com',
     phone: '(87) 99801-8279',
     whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
@@ -28,7 +28,7 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user-vendor-3',
     name: 'Antônio Queijeiro (Serra da Canastra)',
-    email: 'antonio.queijos@feiralocal.com',
+    email: 'antonio.queijos@feirae.com',
     phone: '(87) 99801-8279',
     whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
@@ -36,7 +36,7 @@ export const INITIAL_USERS: User[] = [
   {
     id: 'user-admin-1',
     name: 'Administração Feira Livre Central',
-    email: 'admin@feiralocal.com',
+    email: 'admin@feirae.com',
     phone: '(11) 3333-4444',
     whatsappPhone: '(87) 99801-8279',
     role: 'ADMIN',

@@ -143,7 +143,7 @@ export function LoginModal({ isOpen, onClose, defaultTab = 'LOGIN' }: LoginModal
             </div>
             <div>
               <h3 className="font-bold text-lg leading-tight">
-                {activeTab === 'LOGIN' ? 'Acessar FeiraLocal' : 'Criar Nova Conta'}
+                {activeTab === 'LOGIN' ? 'Acessar Feirae' : 'Criar Nova Conta'}
               </h3>
               <p className="text-xs text-white/80">
                 {activeTab === 'LOGIN' 
@@ -306,7 +306,7 @@ export function LoginModal({ isOpen, onClose, defaultTab = 'LOGIN' }: LoginModal
 
                     <button
                       type="button"
-                      onClick={() => handleFillAccount('admin@feiralocal.com')}
+                      onClick={() => handleFillAccount('admin@feirae.com')}
                       className="w-full text-left p-2 rounded-xl bg-white hover:bg-purple-50/70 border border-stone-200/80 hover:border-purple-300 transition flex items-center justify-between group cursor-pointer"
                     >
                       <div className="flex items-center gap-2 truncate">
@@ -517,7 +517,7 @@ export function LoginModal({ isOpen, onClose, defaultTab = 'LOGIN' }: LoginModal
 
         {/* Footer */}
         <div className="p-3.5 bg-stone-50 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500 shrink-0">
-          <span>FeiraLocal • Conectando feirantes e clientes</span>
+          <span>Feirae • Conectando feirantes e clientes</span>
           <button
             type="button"
             onClick={onClose}

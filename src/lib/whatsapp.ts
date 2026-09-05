@@ -40,7 +40,7 @@ export function getPickupPassWhatsAppLink(order: Order, vendorPhone?: string): s
     ? order.items.map(i => `• ${i.quantity}x ${i.productName}`).join('\n')
     : '';
 
-  const message = `Olá! Gostaria de confirmar meu pré-pedido *#${order.orderNumber}* na *${order.vendorName || 'FeiraLocal'}*.\n\n` +
+  const message = `Olá! Gostaria de confirmar meu pré-pedido *#${order.orderNumber}* na *${order.vendorName || 'Feirae'}*.\n\n` +
     `📋 *Resumo do Pedido:*\n${itemsText}\n\n` +
     `💰 *Valor Total:* ${formatCurrency(order.totalAmount)}\n` +
     `📍 *Retirada:* ${order.pickupDate} (${order.pickupLocation})\n\n` +

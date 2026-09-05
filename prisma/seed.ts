@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando Seed no banco de dados FeiraLocal com IDs reais (CUID)...');
+  console.log('🌱 Iniciando Seed no banco de dados Feirae com IDs reais (CUID)...');
 
   // 0. Limpar tabelas existentes em ordem de integridade referencial
   await prisma.notification.deleteMany();
@@ -29,7 +29,7 @@ async function main() {
   const zeUser = await prisma.user.create({
     data: {
       name: 'José Pereira (Zé dos Orgânicos)',
-      email: 'ze.organicos@feiralocal.com',
+      email: 'ze.organicos@feirae.com',
       phone: '(11) 97654-3210',
       role: 'VENDOR',
     },
@@ -38,7 +38,7 @@ async function main() {
   const neusaUser = await prisma.user.create({
     data: {
       name: 'Dona Neusa (Doces da Vovó)',
-      email: 'neusa.doces@feiralocal.com',
+      email: 'neusa.doces@feirae.com',
       phone: '(11) 96543-2109',
       role: 'VENDOR',
     },
@@ -47,7 +47,7 @@ async function main() {
   const antonioUser = await prisma.user.create({
     data: {
       name: 'Antônio Queijeiro (Serra da Canastra)',
-      email: 'antonio.queijos@feiralocal.com',
+      email: 'antonio.queijos@feirae.com',
       phone: '(11) 95432-1098',
       role: 'VENDOR',
     },
@@ -56,7 +56,7 @@ async function main() {
   await prisma.user.create({
     data: {
       name: 'Administração Feira Livre Central',
-      email: 'admin@feiralocal.com',
+      email: 'admin@feirae.com',
       phone: '(11) 3333-4444',
       role: 'ADMIN',
     },
