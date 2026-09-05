@@ -33,8 +33,8 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
 
       {/* Profile & Info */}
       <div className="p-4 pt-0 flex-1 flex flex-col justify-between relative">
-        <div className="flex items-end gap-3 -mt-6 mb-3">
-          <div className="w-14 h-14 rounded-2xl border-2 border-white bg-white shadow-md overflow-hidden shrink-0">
+        <div className="flex items-start gap-3 mb-3">
+          <div className="-mt-7 w-14 h-14 rounded-2xl border-2 border-white bg-white shadow-md overflow-hidden shrink-0">
             {vendor.avatar ? (
               <img src={vendor.avatar} alt={vendor.businessName} className="w-full h-full object-cover" />
             ) : (
@@ -43,7 +43,7 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
               </div>
             )}
           </div>
-          <div className="flex-1 min-w-0 pb-0.5">
+          <div className="pt-2 flex-1 min-w-0">
             <h3 className="font-bold text-stone-900 text-sm sm:text-base leading-tight truncate group-hover:text-feira-700 transition-colors">
               {vendor.businessName}
             </h3>
