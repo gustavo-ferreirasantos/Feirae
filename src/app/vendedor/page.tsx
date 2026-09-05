@@ -85,6 +85,10 @@ export default function VendorDashboardPage() {
   // Plan Toggle State
   const [togglingPlan, setTogglingPlan] = useState(false);
 
+  // Featured / Sponsorship Toggle State (US19)
+  const [togglingFeatured, setTogglingFeatured] = useState(false);
+  const [featuredSuccessMsg, setFeaturedSuccessMsg] = useState<string | null>(null);
+
   const isVendor = currentUser?.role === 'VENDOR';
   const activeVendorId = currentVendor?.id || 'vendor-1';
 
@@ -174,6 +178,44 @@ export default function VendorDashboardPage() {
       console.error('Erro ao alterar plano:', err);
     } finally {
       setTogglingPlan(false);
+    }
+  };
+
+  const handleToggleFeatured = async () => {
+    setTogglingFeatured(true);
+    setFeaturedSuccessMsg(null);
+    try {
+      const isCurrentlyFeatured = Boolean(currentVendor?.isFeatured);
+      const nextFeatured = !isCurrentlyFeatured;
+      const featuredUntil = nextFeatured 
+        ? new Date(Date.now() + 86400000 * 7).toISOString()
+        : null;
+
+      const payload = {
+        isFeatured: nextFeatured,
+        featuredUntil,
+      };
+
+      const res = await fetch(`/api/vendors/${activeVendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        updateCurrentVendor(payload);
+        loadVendorData();
+        setFeaturedSuccessMsg(
+          nextFeatured 
+            ? '🎉 Destaque Patrocinado ativado com sucesso! Sua barraca agora está no topo da vitrine principal da feira.'
+            : 'Destaque Patrocinado pausado.'
+        );
+        setTimeout(() => setFeaturedSuccessMsg(null), 5000);
+      }
+    } catch (err) {
+      console.error('Erro ao alternar destaque patrocinado:', err);
+    } finally {
+      setTogglingFeatured(false);
     }
   };
 
@@ -893,6 +935,80 @@ export default function VendorDashboardPage() {
                   <>
                     <Sparkles className="w-4 h-4 text-stone-950" />
                     <span>Assinar Plano Feirante Pro (R$ 49,90/mês)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Featured / Sponsored Spotlight Card (US19) */}
+      {(() => {
+        const isFeatured = Boolean(currentVendor?.isFeatured);
+        const featuredUntil = currentVendor?.featuredUntil;
+        const isExpired = featuredUntil && new Date(featuredUntil).getTime() < Date.now();
+        const activeFeatured = isFeatured && !isExpired;
+
+        return (
+          <div className="bg-gradient-to-r from-amber-500/10 via-amber-100/30 to-white rounded-3xl p-6 border border-amber-300 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-amber-900 uppercase tracking-wider flex items-center gap-1.5">
+                  <Sparkles className="w-4 h-4 text-amber-600 fill-amber-500" />
+                  Destaque Patrocinado na Vitrine:
+                </span>
+                {activeFeatured ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-black bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 shadow-xs">
+                    ⭐ Barraca Patrocinada Ativa
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                    Não contratado
+                  </span>
+                )}
+              </div>
+
+              <h4 className="font-extrabold text-stone-900 text-sm sm:text-base">
+                {activeFeatured
+                  ? 'Sua barraca está em primeiro lugar na página inicial!'
+                  : 'Multiplique seus pedidos aparecendo no topo da feira'}
+              </h4>
+
+              <p className="text-xs text-stone-600 leading-relaxed max-w-2xl">
+                {activeFeatured
+                  ? `Sua barraca está em exibição prioritária no topo da vitrine pública com selo "Patrocinado"${
+                      featuredUntil ? ` até ${new Date(featuredUntil).toLocaleDateString('pt-BR')}` : ''
+                    }. Aproveite o fluxo extra de pré-pedidos!`
+                  : 'Contrate o Destaque Patrocinado para posicionar sua barraca no carrossel de topo da vitrine principal com selo exclusivo de destaque por 7 dias (R$ 29,90 simulado).'}
+              </p>
+
+              {featuredSuccessMsg && (
+                <div className="p-2.5 rounded-xl bg-emerald-100/80 border border-emerald-300 text-emerald-900 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  <span>{featuredSuccessMsg}</span>
+                </div>
+              )}
+            </div>
+
+            <div className="shrink-0 flex items-center gap-3">
+              <button
+                onClick={handleToggleFeatured}
+                disabled={togglingFeatured}
+                className={`px-5 py-3 rounded-2xl font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer ${
+                  activeFeatured
+                    ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-300'
+                    : 'bg-gradient-to-r from-amber-500 via-amber-600 to-amber-700 hover:from-amber-600 hover:to-amber-800 text-stone-950 font-black shadow-amber-500/25'
+                }`}
+              >
+                {togglingFeatured ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : activeFeatured ? (
+                  <span>Pausar Destaque Patrocinado</span>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-stone-950 fill-stone-950" />
+                    <span>Contratar Destaque (R$ 29,90/semana)</span>
                   </>
                 )}
               </button>

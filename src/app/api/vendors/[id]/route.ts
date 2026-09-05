@@ -71,6 +71,9 @@ export async function PATCH(
           ...(body.whatsappPhone !== undefined && { whatsappPhone: body.whatsappPhone }),
           ...(body.coverImage !== undefined && { coverImage: body.coverImage }),
           ...(body.avatar !== undefined && { avatar: body.avatar }),
+          ...(body.isFeatured !== undefined && { isFeatured: Boolean(body.isFeatured) }),
+          ...(body.featuredUntil !== undefined && { featuredUntil: body.featuredUntil ? new Date(body.featuredUntil) : null }),
+          ...(body.featuredOrder !== undefined && { featuredOrder: Number(body.featuredOrder) }),
         },
       });
 

@@ -89,6 +89,21 @@ class MemoryStore {
     return this.vendors.filter(v => v.active);
   }
 
+  getFeaturedVendors(): Vendor[] {
+    return this.vendors
+      .filter(v => {
+        if (!v.active || !v.isFeatured) return false;
+        if (v.featuredUntil && new Date(v.featuredUntil).getTime() < Date.now()) return false;
+        return true;
+      })
+      .sort((a, b) => {
+        const orderA = a.featuredOrder ?? 999;
+        const orderB = b.featuredOrder ?? 999;
+        if (orderA !== orderB) return orderA - orderB;
+        return b.rating - a.rating;
+      });
+  }
+
   getVendorById(id: string): Vendor | undefined {
     return this.vendors.find(v => v.id === id || v.slug === id);
   }
@@ -449,7 +464,7 @@ class MemoryStore {
       .filter(o => o.status !== 'CANCELADO')
       .reduce((sum, o) => sum + o.totalAmount, 0);
 
-    // Calculate simulated commissions
+    // Calculate simulated commissions & sponsorships
     let simulatedCommissionTotal = 0;
     let subscriptionTotal = 0;
 
@@ -465,6 +480,11 @@ class MemoryStore {
       }
     });
 
+    const featuredVendorsCount = this.vendors.filter(
+      v => v.active && v.isFeatured && (!v.featuredUntil || new Date(v.featuredUntil).getTime() >= Date.now())
+    ).length;
+    const sponsorshipRevenue = featuredVendorsCount * 29.90; // R$ 29,90 simulado por destaque
+
     return {
       activeVendors,
       totalProducts,
@@ -472,7 +492,9 @@ class MemoryStore {
       totalVolume,
       simulatedCommissionTotal,
       subscriptionTotal,
-      totalMonetizationEstimate: simulatedCommissionTotal + subscriptionTotal,
+      featuredVendorsCount,
+      sponsorshipRevenue,
+      totalMonetizationEstimate: simulatedCommissionTotal + subscriptionTotal + sponsorshipRevenue,
       ordersByStatus: {
         novo: this.orders.filter(o => o.status === 'NOVO').length,
         em_preparo: this.orders.filter(o => o.status === 'EM_PREPARO').length,

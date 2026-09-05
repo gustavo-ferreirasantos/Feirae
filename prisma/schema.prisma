@@ -80,6 +80,9 @@ model Vendor {
   maxProducts    Int            @default(5)
   isSubscriber   Boolean        @default(false)
   commissionRate Float          @default(0.05)
+  isFeatured     Boolean        @default(false)
+  featuredUntil  DateTime?
+  featuredOrder  Int            @default(0)
   active         Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt

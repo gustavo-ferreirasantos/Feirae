@@ -35,6 +35,9 @@ export interface Vendor {
   maxProducts?: number;
   isSubscriber: boolean;
   commissionRate: number;
+  isFeatured?: boolean;
+  featuredUntil?: string | null;
+  featuredOrder?: number;
   active: boolean;
 }
 

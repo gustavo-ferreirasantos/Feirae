@@ -18,7 +18,8 @@ import {
   UserX,
   Search,
   Clock,
-  AlertCircle
+  AlertCircle,
+  Sparkles
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
@@ -79,6 +80,28 @@ export default function AdminDashboardPage() {
         setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, active: nextActive } : v));
         setActionFeedback(`Barraca ${nextActive ? 'aprovada / ativada na vitrine' : 'pausada da vitrine'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleFeaturedVendor = async (vendorId: string, currentFeatured: boolean) => {
+    const nextFeatured = !currentFeatured;
+    const featuredUntil = nextFeatured ? new Date(Date.now() + 86400000 * 7).toISOString() : null;
+    try {
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isFeatured: nextFeatured, featuredUntil }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, isFeatured: nextFeatured, featuredUntil } : v));
+        setActionFeedback(`Destaque patrocinado da barraca ${nextFeatured ? 'ativado' : 'pausado'} com sucesso.`);
+        setTimeout(() => setActionFeedback(null), 3000);
+        // Reload stats
+        const statsRes = await fetch('/api/admin/stats');
+        if (statsRes.ok) setStats(await statsRes.json());
       }
     } catch (err) {
       console.error(err);
@@ -251,65 +274,90 @@ export default function AdminDashboardPage() {
         <div className="space-y-8 animate-in fade-in">
           
           {/* Metrics Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Feirantes Ativos</span>
-                <span className="text-3xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
+                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
                 <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">Exibidos na vitrine</span>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center">
-                <Store className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                <Store className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Total de Pedidos</span>
-                <span className="text-3xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
-                <span className="text-[11px] text-blue-600 font-semibold mt-1 block">Acumulados no sistema</span>
+                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Total Pedidos</span>
+                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
+                <span className="text-[11px] text-blue-600 font-semibold mt-1 block">Acumulados</span>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center">
-                <ShoppingBag className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume Transacionado (GMV)</span>
-                <span className="text-3xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
-                <span className="text-[11px] text-stone-500 font-semibold mt-1 block">Total movimentado na feira</span>
+                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume (GMV)</span>
+                <span className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
+                <span className="text-[11px] text-stone-500 font-semibold mt-1 block">Movimentado na feira</span>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
-                <TrendingUp className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-5 h-5" />
               </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
-                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">MRR de Assinaturas</span>
-                <span className="text-3xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
-                <span className="text-[11px] text-purple-600 font-semibold mt-1 block">R$ 49,90/mês por barraca</span>
+                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Assinaturas MRR</span>
+                <span className="text-2xl sm:text-3xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
+                <span className="text-[11px] text-purple-600 font-semibold mt-1 block">R$ 49,90/mês</span>
               </div>
-              <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center">
-                <Layers className="w-6 h-6" />
+              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                <Layers className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-3xl border border-amber-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
+              <div>
+                <span className="text-xs font-semibold text-amber-900 block uppercase tracking-wider">Patrocínios</span>
+                <span className="text-2xl sm:text-3xl font-black text-amber-600 mt-1 block">
+                  {formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}
+                </span>
+                <span className="text-[11px] text-amber-700 font-semibold mt-1 block">
+                  {stats.featuredVendorsCount || 0} barraca(s) ativas
+                </span>
+              </div>
+              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <Sparkles className="w-5 h-5 fill-amber-500" />
               </div>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-3">
-              <h3 className="font-extrabold text-stone-900 text-base">Modelo de Monetização SaaS</h3>
+              <h3 className="font-extrabold text-stone-900 text-base">Faturamento & Monetização da Feira</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                A <strong>FeiraLocal</strong> adota modelo de <strong>Assinatura Fixa Mensal</strong> (R$ 49,90 por barraca), garantindo <strong>0% de taxas e comissões sobre as vendas</strong> dos produtores rurais.
+                A <strong>FeiraLocal</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90) e <strong>Destaques Patrocinados</strong> (R$ 29,90/semana), mantendo 0% de comissão de intermediação para os produtores.
               </p>
-              <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1">
+              <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1.5">
                 <div className="flex justify-between font-semibold">
-                  <span>Receita Recorrente Estimada (MRR):</span>
+                  <span>Receita Recorrente de Assinaturas (MRR):</span>
                   <span className="text-feira-800">{formatCurrency(stats.subscribersCount * 49.9)}</span>
                 </div>
-                <div className="flex justify-between text-stone-500">
-                  <span>Economia direta gerada para feirantes vs marketplaces:</span>
+                <div className="flex justify-between font-semibold">
+                  <span>Receita de Destaques Patrocinados (US19):</span>
+                  <span className="text-amber-700">{formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}</span>
+                </div>
+                <div className="flex justify-between font-extrabold text-stone-900 pt-1.5 border-t border-stone-200">
+                  <span>Faturamento Total Simulado da Plataforma:</span>
+                  <span className="text-emerald-700 font-black text-sm">
+                    {formatCurrency(stats.totalMonetizationEstimate || (stats.subscribersCount * 49.9 + (stats.featuredVendorsCount || 0) * 29.9))}
+                  </span>
+                </div>
+                <div className="flex justify-between text-stone-500 pt-1">
+                  <span>Economia gerada para os feirantes vs marketplaces:</span>
                   <span className="text-emerald-600 font-bold">~ {formatCurrency(stats.totalGMV * 0.15)}</span>
                 </div>
               </div>
@@ -416,13 +464,14 @@ export default function AdminDashboardPage() {
                   <th className="p-3.5">Localização na Feira</th>
                   <th className="p-3.5">Contato do Feirante</th>
                   <th className="p-3.5">Status de Moderação</th>
+                  <th className="p-3.5">Destaque Patrocinado</th>
                   <th className="p-3.5 text-right">Ação do Administrador</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-stone-100">
                 {filteredVendors.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="p-8 text-center text-stone-400">
+                    <td colSpan={7} className="p-8 text-center text-stone-400">
                       Nenhuma barraca encontrada com os filtros selecionados.
                     </td>
                   </tr>
@@ -471,24 +520,65 @@ export default function AdminDashboardPage() {
                         )}
                       </td>
 
-                      <td className="p-3.5 text-right">
-                        {v.active === true ? (
-                          <button
-                            onClick={() => handleToggleVendor(v.id, true)}
-                            className="px-3 py-1.5 rounded-xl text-xs font-bold border border-red-200 text-red-600 hover:bg-red-50 transition flex items-center gap-1.5 ml-auto cursor-pointer"
-                          >
-                            <UserX className="w-3.5 h-3.5" />
-                            <span>Pausar Barraca</span>
-                          </button>
+                      <td className="p-3.5">
+                        {v.isFeatured ? (
+                          <div className="space-y-1">
+                            <span className="px-2.5 py-1 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 w-fit">
+                              <Sparkles className="w-3 h-3 text-amber-700 fill-amber-500" /> Patrocinada
+                            </span>
+                            {v.featuredUntil && (
+                              <div className="text-[10px] text-stone-500 font-mono">
+                                até {new Date(v.featuredUntil).toLocaleDateString('pt-BR')}
+                              </div>
+                            )}
+                          </div>
                         ) : (
-                          <button
-                            onClick={() => handleToggleVendor(v.id, false)}
-                            className="px-3.5 py-1.5 rounded-xl text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition flex items-center gap-1.5 ml-auto cursor-pointer"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            <span>Aprovar & Ativar</span>
-                          </button>
+                          <span className="text-[11px] text-stone-400">
+                            Padrão (Sem destaque)
+                          </span>
                         )}
+                      </td>
+
+                      <td className="p-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {v.isFeatured ? (
+                            <button
+                              onClick={() => handleToggleFeaturedVendor(v.id, true)}
+                              className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100 transition flex items-center gap-1 cursor-pointer"
+                              title="Pausar destaque patrocinado"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-700" />
+                              <span>Pausar Destaque</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleToggleFeaturedVendor(v.id, false)}
+                              className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-stone-200 text-stone-700 hover:bg-stone-100 transition flex items-center gap-1 cursor-pointer"
+                              title="Ativar destaque patrocinado por 7 dias"
+                            >
+                              <Sparkles className="w-3 h-3 text-amber-600" />
+                              <span>Ativar Destaque</span>
+                            </button>
+                          )}
+
+                          {v.active === true ? (
+                            <button
+                              onClick={() => handleToggleVendor(v.id, true)}
+                              className="px-2.5 py-1.5 rounded-xl text-[11px] font-bold border border-red-200 text-red-600 hover:bg-red-50 transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <UserX className="w-3 h-3" />
+                              <span>Pausar</span>
+                            </button>
+                          ) : (
+                            <button
+                              onClick={() => handleToggleVendor(v.id, false)}
+                              className="px-3 py-1.5 rounded-xl text-[11px] font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition flex items-center gap-1 cursor-pointer"
+                            >
+                              <UserCheck className="w-3 h-3" />
+                              <span>Aprovar</span>
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   ))

@@ -4,10 +4,11 @@ import { store } from '@/lib/store';
 
 export async function GET() {
   try {
-    const [vendorsCount, orders, subscribersCount] = await Promise.all([
+    const [vendorsCount, orders, subscribersCount, featuredCount] = await Promise.all([
       prisma.vendor.count({ where: { active: true } }),
       prisma.order.findMany({ select: { status: true, totalAmount: true } }),
       prisma.vendor.count({ where: { isSubscriber: true, active: true } }),
+      prisma.vendor.count({ where: { isFeatured: true, active: true } }),
     ]);
 
     if (vendorsCount > 0 || orders.length > 0) {
@@ -23,11 +24,17 @@ export async function GET() {
         .filter(o => o.status !== 'CANCELADO')
         .reduce((sum, o) => sum + o.totalAmount, 0);
 
+      const sponsorshipRevenue = featuredCount * 29.90;
+      const subscriptionRevenue = subscribersCount * 49.90;
+
       return NextResponse.json({
         activeVendors: vendorsCount,
         totalOrders: orders.length,
         totalGMV: Math.round(totalGMV * 100) / 100,
         subscribersCount,
+        featuredVendorsCount: featuredCount,
+        sponsorshipRevenue,
+        totalMonetizationEstimate: Math.round((subscriptionRevenue + sponsorshipRevenue) * 100) / 100,
         ordersByStatus,
       });
     }

@@ -60,6 +60,9 @@ export const INITIAL_VENDORS: Vendor[] = [
     ratingCount: 38,
     isSubscriber: true,
     commissionRate: 0,
+    isFeatured: true,
+    featuredUntil: new Date(Date.now() + 86400000 * 14).toISOString(),
+    featuredOrder: 1,
     active: true,
   },
   {
@@ -78,6 +81,7 @@ export const INITIAL_VENDORS: Vendor[] = [
     ratingCount: 29,
     isSubscriber: false,
     commissionRate: 0.05,
+    isFeatured: false,
     active: true,
   },
   {
@@ -96,6 +100,9 @@ export const INITIAL_VENDORS: Vendor[] = [
     ratingCount: 45,
     isSubscriber: true,
     commissionRate: 0,
+    isFeatured: true,
+    featuredUntil: new Date(Date.now() + 86400000 * 7).toISOString(),
+    featuredOrder: 2,
     active: true,
   },
 ];

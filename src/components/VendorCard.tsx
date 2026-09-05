@@ -2,13 +2,17 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Store, MapPin, Award, ArrowRight } from 'lucide-react';
+import { Store, MapPin, Award, ArrowRight, Sparkles } from 'lucide-react';
 import { Vendor } from '@/types';
 import { StarRating } from './StarRating';
 
 export function VendorCard({ vendor }: { vendor: Vendor }) {
   return (
-    <div className="group bg-white rounded-2xl border border-stone-200 hover:border-feira-400/80 shadow-xs hover:shadow-md transition-all overflow-hidden flex flex-col">
+    <div className={`group bg-white rounded-2xl border transition-all overflow-hidden flex flex-col ${
+      vendor.isFeatured 
+        ? 'border-amber-300 shadow-amber-500/10 hover:border-amber-400 hover:shadow-md' 
+        : 'border-stone-200 hover:border-feira-400/80 shadow-xs hover:shadow-md'
+    }`}>
       {/* Cover Image */}
       <div className="h-28 w-full bg-stone-100 relative overflow-hidden">
         {vendor.coverImage ? (
@@ -20,12 +24,17 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-feira-600 to-feira-800" />
         )}
-        {(vendor.isSubscriber || vendor.plan === 'PRO') && (
+        {vendor.isFeatured ? (
+          <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 shadow-md flex items-center gap-1 z-10">
+            <Sparkles className="w-3 h-3 text-stone-950 fill-stone-950" />
+            Patrocinado
+          </span>
+        ) : (vendor.isSubscriber || vendor.plan === 'PRO') ? (
           <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1 z-10">
             <Award className="w-3 h-3 text-stone-900" />
             Parceiro Pro
           </span>
-        )}
+        ) : null}
         <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/90 text-stone-800 backdrop-blur-xs shadow-xs">
           {vendor.category}
         </span>
