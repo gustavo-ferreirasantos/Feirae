@@ -13,8 +13,10 @@ import {
   User,
   ShieldCheck,
   MessageCircle,
-  Scale
+  Scale,
+  Compass
 } from 'lucide-react';
+import Link from 'next/link';
 import { Order } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { getPickupPassWhatsAppLink } from '@/lib/whatsapp';
@@ -140,6 +142,15 @@ export function PickupPassModal({ order, onClose }: PickupPassModalProps) {
             <MessageCircle className="w-4 h-4 fill-white/20" />
             <span>Enviar no WhatsApp do Feirante</span>
           </a>
+
+          <Link
+            href={`/mapa?vendorId=${order.vendorId}`}
+            onClick={onClose}
+            className="w-full py-2.5 px-4 rounded-xl bg-amber-400 hover:bg-amber-500 text-stone-950 font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <Compass className="w-4 h-4 text-stone-950" />
+            <span>🗺️ Ver Mapa da Feira (Localizar Barraca)</span>
+          </Link>
 
           <button
             onClick={onClose}

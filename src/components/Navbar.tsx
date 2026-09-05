@@ -11,7 +11,8 @@ import {
   ChevronDown,
   LogIn,
   LogOut,
-  ExternalLink
+  ExternalLink,
+  Compass
 } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
@@ -88,6 +89,17 @@ export function Navbar() {
                   >
                     Barracas & Feirantes
                   </Link>
+                  <Link
+                    href="/mapa"
+                    className={`px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 ${
+                      pathname === '/mapa' 
+                        ? 'text-feira-700 bg-feira-50 font-bold shadow-2xs' 
+                        : 'text-stone-600 hover:text-stone-900 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5 text-feira-600" />
+                    <span>Mapa da Feira</span>
+                  </Link>
                 </>
               )}
 
@@ -113,6 +125,17 @@ export function Navbar() {
                     }`}
                   >
                     Barracas & Feirantes
+                  </Link>
+                  <Link
+                    href="/mapa"
+                    className={`px-3.5 py-2 rounded-xl transition flex items-center gap-1.5 ${
+                      pathname === '/mapa' 
+                        ? 'text-feira-700 bg-feira-50 font-bold shadow-2xs' 
+                        : 'text-stone-600 hover:text-stone-900 hover:bg-stone-50'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5 text-feira-600" />
+                    <span>Mapa da Feira</span>
                   </Link>
                   <Link
                     href="/pedidos"
