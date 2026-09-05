@@ -504,9 +504,132 @@ class MemoryStore {
       }
     };
   }
+
+  getVendorFinancialStats(vendorId: string, dateFilter?: string) {
+    const vendor = this.getVendorById(vendorId);
+    const isPro = vendor ? (vendor.plan === 'PRO' || vendor.isSubscriber || vendor.commissionRate === 0) : false;
+    const commissionRate = isPro ? 0 : (vendor?.commissionRate ?? 0.05);
+
+    // Filter vendor orders with RETIRADO status (completed/settled sales)
+    const allVendorOrders = this.orders.filter(
+      o => o.vendorId === vendorId && o.status === 'RETIRADO'
+    );
+
+    // Extract available dates for filter dropdown
+    const datesSet = new Set<string>();
+    allVendorOrders.forEach(o => {
+      if (o.pickupDate) {
+        datesSet.add(o.pickupDate);
+      }
+    });
+    const availableDates = Array.from(datesSet);
+
+    // Filter by date if specified and not 'ALL'
+    const filteredOrders = dateFilter && dateFilter !== 'ALL'
+      ? allVendorOrders.filter(o => o.pickupDate === dateFilter || o.pickupDate.includes(dateFilter))
+      : allVendorOrders;
+
+    // Financial Metrics
+    const totalGross = filteredOrders.reduce((sum, o) => sum + o.totalAmount, 0);
+    const totalCommission = Number((totalGross * commissionRate).toFixed(2));
+    const totalNet = Number((totalGross - totalCommission).toFixed(2));
+
+    const paidAtPickup = filteredOrders
+      .filter(o => o.paymentMethod === 'RETIRADA')
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const paidOnline = filteredOrders
+      .filter(o => o.paymentMethod === 'MERCADO_PAGO_PIX' || o.paymentMethod === 'MERCADO_PAGO_CARTAO')
+      .reduce((sum, o) => sum + o.totalAmount, 0);
+
+    const averageTicket = filteredOrders.length > 0 ? totalGross / filteredOrders.length : 0;
+
+    // Detailed statement items
+    const orders = filteredOrders.map(o => {
+      const commission = Number((o.totalAmount * commissionRate).toFixed(2));
+      const net = Number((o.totalAmount - commission).toFixed(2));
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        clientName: o.clientName,
+        clientPhone: o.clientPhone,
+        totalAmount: o.totalAmount,
+        paymentMethod: o.paymentMethod,
+        paymentStatus: o.paymentStatus,
+        pickupDate: o.pickupDate,
+        createdAt: o.createdAt,
+        commission,
+        net,
+        itemsCount: o.items ? o.items.length : 0,
+      };
+    });
+
+    // Recent 4 fairs revenue evolution (using allVendorOrders)
+    const fairsMap = new Map<string, { totalGross: number; totalNet: number; orderCount: number }>();
+    allVendorOrders.forEach(o => {
+      const dateKey = o.pickupDate || 'Outra Data';
+      const existing = fairsMap.get(dateKey) || { totalGross: 0, totalNet: 0, orderCount: 0 };
+      const comm = Number((o.totalAmount * commissionRate).toFixed(2));
+      existing.totalGross += o.totalAmount;
+      existing.totalNet += (o.totalAmount - comm);
+      existing.orderCount += 1;
+      fairsMap.set(dateKey, existing);
+    });
+
+    let recentFairs = Array.from(fairsMap.entries()).map(([date, stats]) => ({
+      date,
+      totalGross: Number(stats.totalGross.toFixed(2)),
+      totalNet: Number(stats.totalNet.toFixed(2)),
+      orderCount: stats.orderCount,
+    }));
+
+    if (recentFairs.length === 0) {
+      recentFairs = [
+        { date: '15/08/2026', totalGross: 0, totalNet: 0, orderCount: 0 },
+        { date: '22/08/2026', totalGross: 0, totalNet: 0, orderCount: 0 },
+        { date: '29/08/2026', totalGross: 0, totalNet: 0, orderCount: 0 },
+        { date: '05/09/2026', totalGross: 0, totalNet: 0, orderCount: 0 },
+      ];
+    } else if (recentFairs.length > 4) {
+      recentFairs = recentFairs.slice(-4);
+    }
+
+    return {
+      vendor: {
+        id: vendor?.id || vendorId,
+        businessName: vendor?.businessName || 'Feirante',
+        isPro,
+        commissionRate,
+        plan: isPro ? 'PRO' : 'FREE',
+      },
+      dateFilter: dateFilter || 'ALL',
+      totalGross: Number(totalGross.toFixed(2)),
+      totalCommission: Number(totalCommission.toFixed(2)),
+      totalNet: Number(totalNet.toFixed(2)),
+      paidAtPickup: Number(paidAtPickup.toFixed(2)),
+      paidOnline: Number(paidOnline.toFixed(2)),
+      averageTicket: Number(averageTicket.toFixed(2)),
+      totalOrdersCount: filteredOrders.length,
+      availableDates,
+      recentFairs,
+      orders,
+    };
+  }
 }
 
 // Global Singleton for in-memory store
 const globalStore = globalThis as unknown as { appStore?: MemoryStore };
 export const store = globalStore.appStore ?? new MemoryStore();
-if (process.env.NODE_ENV !== 'production') globalStore.appStore = store;
+if (process.env.NODE_ENV !== 'production') {
+  if (globalStore.appStore) {
+    Object.setPrototypeOf(globalStore.appStore, MemoryStore.prototype);
+    // Ensure newly added mock orders from INITIAL_ORDERS are merged
+    INITIAL_ORDERS.forEach(initialOrder => {
+      if (!globalStore.appStore!.orders.some(o => o.id === initialOrder.id)) {
+        globalStore.appStore!.orders.push({ ...initialOrder });
+      }
+    });
+  } else {
+    globalStore.appStore = store;
+  }
+}

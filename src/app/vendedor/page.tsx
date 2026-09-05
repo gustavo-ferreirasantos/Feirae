@@ -23,9 +23,14 @@ import {
   MessageSquare,
   ShoppingBag,
   Search,
-  Filter,
   Award,
-  Sparkles
+  Sparkles,
+  FileSpreadsheet,
+  Printer,
+  Wallet,
+  CreditCard,
+  Banknote,
+  RefreshCw
 } from 'lucide-react';
 import { Order, Product, Vendor, OrderStatus, PickupWindow, Review } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -34,9 +39,48 @@ import { OrderKanban } from '@/components/OrderKanban';
 import { StarRating } from '@/components/StarRating';
 import { LoginModal } from '@/components/LoginModal';
 
+interface FinancialStats {
+  vendor: {
+    id: string;
+    businessName: string;
+    isPro: boolean;
+    commissionRate: number;
+    plan: 'FREE' | 'PRO';
+  };
+  dateFilter: string;
+  totalGross: number;
+  totalCommission: number;
+  totalNet: number;
+  paidAtPickup: number;
+  paidOnline: number;
+  averageTicket: number;
+  totalOrdersCount: number;
+  availableDates: string[];
+  recentFairs: Array<{
+    date: string;
+    totalGross: number;
+    totalNet: number;
+    orderCount: number;
+  }>;
+  orders: Array<{
+    id: string;
+    orderNumber: string;
+    clientName: string;
+    clientPhone: string;
+    totalAmount: number;
+    paymentMethod: string;
+    paymentStatus: string;
+    pickupDate: string;
+    createdAt: string;
+    commission: number;
+    net: number;
+    itemsCount: number;
+  }>;
+}
+
 export default function VendorDashboardPage() {
   const { currentUser, currentVendor, updateCurrentVendor } = useUser();
-  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS'>('KANBAN');
+  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL'>('KANBAN');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [pickupWindows, setPickupWindows] = useState<PickupWindow[]>([]);
@@ -49,6 +93,11 @@ export default function VendorDashboardPage() {
 
   // Login Modal for unauthorized users
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Financial Tab State (US20)
+  const [financeData, setFinanceData] = useState<FinancialStats | null>(null);
+  const [financeDateFilter, setFinanceDateFilter] = useState<string>('ALL');
+  const [loadingFinance, setLoadingFinance] = useState(false);
 
   // Product Modal State
   const [showProductModal, setShowProductModal] = useState(false);
@@ -127,9 +176,101 @@ export default function VendorDashboardPage() {
     }
   };
 
+  const fetchFinanceStats = async (date: string = financeDateFilter) => {
+    if (!isVendor) return;
+    setLoadingFinance(true);
+    try {
+      const url = `/api/vendors/finance/stats?vendorId=${activeVendorId}${date !== 'ALL' ? `&date=${encodeURIComponent(date)}` : ''}`;
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json();
+        setFinanceData(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar dados financeiros:', err);
+    } finally {
+      setLoadingFinance(false);
+    }
+  };
+
+  const handleExportCSV = () => {
+    if (!financeData || !financeData.orders.length) {
+      alert('Não há lançamentos de pedidos para exportar no período selecionado.');
+      return;
+    }
+
+    const isPro = financeData.vendor.isPro;
+    const commRateStr = isPro ? '0%' : `${(financeData.vendor.commissionRate * 100).toFixed(0)}%`;
+
+    const headers = [
+      'Codigo Pedido',
+      'Data da Feira',
+      'Data/Hora Pedido',
+      'Cliente',
+      'Telefone',
+      'Metodo de Pagamento',
+      'Status Pagamento',
+      'Valor Bruto (R$)',
+      `Taxa Plataforma (${commRateStr}) (R$)`,
+      'Valor Liquido (R$)'
+    ];
+
+    const rows = financeData.orders.map(o => {
+      const methodLabel = o.paymentMethod === 'RETIRADA' 
+        ? 'No Ato (Dinheiro/Pix Barraca)' 
+        : o.paymentMethod === 'MERCADO_PAGO_PIX' 
+          ? 'App (Mercado Pago Pix)' 
+          : 'App (Mercado Pago Cartão)';
+      const dateFormatted = new Date(o.createdAt).toLocaleString('pt-BR');
+      return [
+        `"${o.orderNumber}"`,
+        `"${o.pickupDate || '-'}"`,
+        `"${dateFormatted}"`,
+        `"${o.clientName.replace(/"/g, '""')}"`,
+        `"${o.clientPhone || '-'}"`,
+        `"${methodLabel}"`,
+        `"${o.paymentStatus}"`,
+        o.totalAmount.toFixed(2).replace('.', ','),
+        o.commission.toFixed(2).replace('.', ','),
+        o.net.toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"${financeDateFilter === 'ALL' ? 'Todas as Feiras' : financeDateFilter}"`,
+      '""',
+      `"${financeData.orders.length} pedidos"`,
+      '""',
+      '""',
+      '""',
+      financeData.totalGross.toFixed(2).replace('.', ','),
+      financeData.totalCommission.toFixed(2).replace('.', ','),
+      financeData.totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const sanitizedVendor = (financeData.vendor.businessName || 'feirante').toLowerCase().replace(/[^a-z0-9]/g, '-');
+    const sanitizedDate = financeDateFilter === 'ALL' ? 'consolidado' : financeDateFilter.replace(/\//g, '-');
+    link.setAttribute('download', `extrato-fechamento-${sanitizedVendor}-${sanitizedDate}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const handlePrintStatement = () => {
+    window.print();
+  };
+
   useEffect(() => {
     loadVendorData();
-  }, [activeVendorId, isVendor]);
+    fetchFinanceStats(financeDateFilter);
+  }, [activeVendorId, isVendor, financeDateFilter]);
 
   const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
     setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
@@ -143,6 +284,7 @@ export default function VendorDashboardPage() {
       if (res.ok) {
         const updated = await res.json();
         setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o));
+        fetchFinanceStats(financeDateFilter);
       } else {
         loadVendorData();
       }
@@ -173,6 +315,7 @@ export default function VendorDashboardPage() {
       if (res.ok) {
         updateCurrentVendor(payload);
         loadVendorData();
+        fetchFinanceStats(financeDateFilter);
       }
     } catch (err) {
       console.error('Erro ao alterar plano:', err);
@@ -1136,6 +1279,21 @@ export default function VendorDashboardPage() {
             {reviews.length}
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('FINANCIAL')}
+          className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'FINANCIAL'
+              ? 'border-amber-600 text-amber-800'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <DollarSign className="w-4 h-4" />
+          Financeiro & Fechamento
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-[10px] text-emerald-800 font-extrabold">
+            {financeData?.totalOrdersCount ?? 0}
+          </span>
+        </button>
       </div>
 
       {/* Tab 1: KANBAN */}
@@ -1444,6 +1602,480 @@ export default function VendorDashboardPage() {
               ))}
             </div>
           )}
+        </div>
+      )}
+
+      {/* Tab 6: FINANCIAL & CLOSING (US20) */}
+      {activeTab === 'FINANCIAL' && (
+        <div id="printable-financial-statement" className="space-y-6 animate-in fade-in">
+          {/* Global Print Styles */}
+          <style jsx global>{`
+            @media print {
+              body * {
+                visibility: hidden;
+              }
+              #printable-financial-statement, #printable-financial-statement * {
+                visibility: visible;
+              }
+              #printable-financial-statement {
+                position: absolute;
+                left: 0;
+                top: 0;
+                width: 100%;
+                background: white !important;
+                color: #1c1917 !important;
+                padding: 16px;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+          `}</style>
+
+          {/* Printable Header (Visible when printing) */}
+          <div className="hidden print:block border-b-2 border-stone-800 pb-4 mb-6">
+            <div className="flex justify-between items-start">
+              <div>
+                <h1 className="text-2xl font-black text-stone-900 tracking-tight">Feirae • Fechamento de Caixa</h1>
+                <p className="text-xs text-stone-600 mt-0.5">Comprovante e Extrato Financeiro Consolidado da Barraca</p>
+              </div>
+              <div className="text-right text-xs text-stone-500">
+                <div>Emissão: {new Date().toLocaleDateString('pt-BR')} às {new Date().toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
+                <div className="font-bold text-stone-800">Feira: {financeDateFilter === 'ALL' ? 'Todas as Feiras (Consolidado)' : financeDateFilter}</div>
+              </div>
+            </div>
+            <div className="mt-3 text-xs text-stone-700 flex flex-wrap gap-4 pt-2 border-t border-stone-200">
+              <span><strong>Barraca / Feirante:</strong> {financeData?.vendor.businessName || currentVendor?.businessName}</span>
+              <span><strong>Plano Atual:</strong> {financeData?.vendor.isPro ? 'Feirante Pro (0% de comissão)' : 'Gratuito (5% taxa retida)'}</span>
+              <span><strong>Pedidos Concluídos:</strong> {financeData?.totalOrdersCount ?? 0}</span>
+            </div>
+          </div>
+
+          {/* Interactive Header & Action Toolbar (Screen View) */}
+          <div className="no-print bg-white rounded-3xl p-6 border border-stone-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+                <h2 className="text-lg font-extrabold text-stone-900">Fechamento de Caixa & Extrato Financeiro</h2>
+                {financeData?.vendor.isPro ? (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                    <Award className="w-3 h-3 text-amber-700" /> 0% Comissão Pro
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-700 border border-stone-200">
+                    5% Taxa Retida (Plano Grátis)
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-stone-500 mt-1">
+                Acompanhe o fechamento consolidado por dia de feira, discriminação de taxas e modalidades de recebimento.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Date Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-stone-50 border border-stone-200 rounded-xl px-3 py-2 text-xs">
+                <Calendar className="w-3.5 h-3.5 text-stone-500 shrink-0" />
+                <span className="font-semibold text-stone-500 text-[11px] hidden sm:inline">Filtrar Feira:</span>
+                <select
+                  value={financeDateFilter}
+                  onChange={e => setFinanceDateFilter(e.target.value)}
+                  className="bg-transparent font-bold text-stone-800 focus:outline-none cursor-pointer"
+                >
+                  <option value="ALL">Todas as Feiras (Consolidado)</option>
+                  {financeData?.availableDates?.map(d => (
+                    <option key={d} value={d}>
+                      Feira de {d}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Export CSV Button */}
+              <button
+                onClick={handleExportCSV}
+                className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold transition flex items-center gap-1.5 border border-stone-200 shadow-2xs cursor-pointer"
+                title="Exportar extrato em planilha CSV compatível com Excel e Google Sheets"
+              >
+                <FileSpreadsheet className="w-4 h-4 text-emerald-700" />
+                <span>Exportar CSV</span>
+              </button>
+
+              {/* Print / PDF Button */}
+              <button
+                onClick={handlePrintStatement}
+                className="px-3.5 py-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-800 text-xs font-bold transition flex items-center gap-1.5 border border-stone-200 shadow-2xs cursor-pointer"
+                title="Imprimir extrato ou salvar em PDF"
+              >
+                <Printer className="w-4 h-4 text-stone-700" />
+                <span>Imprimir / PDF</span>
+              </button>
+
+              {/* Refresh Button */}
+              <button
+                onClick={() => fetchFinanceStats(financeDateFilter)}
+                disabled={loadingFinance}
+                className="p-2 rounded-xl bg-stone-100 hover:bg-stone-200 text-stone-700 border border-stone-200 cursor-pointer transition"
+                title="Atualizar dados financeiros"
+              >
+                <RefreshCw className={`w-4 h-4 ${loadingFinance ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Consolidated Financial Metric Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            {/* Card 1: Total Bruto (GMV) */}
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Total Bruto (GMV)</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                  <DollarSign className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-black text-stone-900 block">
+                  {formatCurrency(financeData?.totalGross ?? 0)}
+                </span>
+                <span className="text-[11px] text-stone-500 block mt-0.5">
+                  {financeData?.totalOrdersCount ?? 0} pedidos concluídos
+                </span>
+              </div>
+            </div>
+
+            {/* Card 2: Comissão Retida */}
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Taxa da Plataforma</span>
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                  financeData?.vendor.isPro ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'
+                }`}>
+                  <Tag className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className={`text-2xl font-black block ${
+                  financeData?.vendor.isPro ? 'text-amber-700' : 'text-red-600'
+                }`}>
+                  {formatCurrency(financeData?.totalCommission ?? 0)}
+                </span>
+                <div className="flex items-center gap-1 mt-0.5">
+                  {financeData?.vendor.isPro ? (
+                    <span className="text-[10px] font-bold text-amber-800 bg-amber-50 px-1.5 py-0.2 rounded-md border border-amber-200">
+                      0% Isento (Plano Pro)
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-bold text-red-800 bg-red-50 px-1.5 py-0.2 rounded-md border border-red-200">
+                      5% Retido (Plano Grátis)
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Card 3: Valor Líquido a Receber */}
+            <div className="bg-gradient-to-br from-emerald-50 to-teal-50/70 p-5 rounded-2xl border-2 border-emerald-300 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-emerald-900">Saldo Líquido</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center shadow-xs">
+                  <Wallet className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-black text-emerald-800 block">
+                  {formatCurrency(financeData?.totalNet ?? 0)}
+                </span>
+                <span className="text-[11px] font-semibold text-emerald-700 block mt-0.5">
+                  Valor líquido do feirante
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: Modalidades: No Ato vs App */}
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Modalidades de Recebimento</span>
+                <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2 space-y-1">
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-stone-500 font-medium">No Ato (Barraca):</span>
+                  <span className="font-bold text-stone-800">{formatCurrency(financeData?.paidAtPickup ?? 0)}</span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-stone-500 font-medium">Via App (Online):</span>
+                  <span className="font-bold text-teal-700">{formatCurrency(financeData?.paidOnline ?? 0)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Card 5: Ticket Médio */}
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-stone-400">Ticket Médio</span>
+                <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                  <TrendingUp className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="mt-2">
+                <span className="text-2xl font-black text-stone-900 block">
+                  {formatCurrency(financeData?.averageTicket ?? 0)}
+                </span>
+                <span className="text-[11px] text-stone-500 block mt-0.5">
+                  Média por pedido concluído
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Visual Chart: Evolução das Últimas 4 Feiras */}
+          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-xs space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h3 className="font-extrabold text-stone-900 text-base flex items-center gap-2">
+                  <TrendingUp className="w-4 h-4 text-amber-600" />
+                  Evolução do Faturamento das Últimas 4 Feiras
+                </h3>
+                <p className="text-xs text-stone-500">
+                  Comparativo de desempenho entre as feiras recentes com volume bruto e líquido
+                </p>
+              </div>
+
+              {(() => {
+                const total4Fairs = (financeData?.recentFairs || []).reduce((sum, f) => sum + f.totalGross, 0);
+                const avg4Fairs = (financeData?.recentFairs || []).length > 0
+                  ? total4Fairs / financeData!.recentFairs.length
+                  : 0;
+                return (
+                  <div className="flex items-center gap-3 text-xs bg-stone-50 px-3.5 py-1.5 rounded-xl border border-stone-200">
+                    <span>Total 4 Feiras: <strong className="text-stone-900">{formatCurrency(total4Fairs)}</strong></span>
+                    <span className="text-stone-300">|</span>
+                    <span>Média por Feira: <strong className="text-emerald-700">{formatCurrency(avg4Fairs)}</strong></span>
+                  </div>
+                );
+              })()}
+            </div>
+
+            {/* Bars Container */}
+            {(() => {
+              const fairs = financeData?.recentFairs || [];
+              const maxGross = Math.max(...fairs.map(f => f.totalGross), 50);
+
+              if (fairs.length === 0) {
+                return (
+                  <div className="py-8 text-center text-xs text-stone-400">
+                    Ainda não há dados suficientes das feiras passadas para exibir o gráfico.
+                  </div>
+                );
+              }
+
+              return (
+                <div className="pt-6 pb-2">
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 items-end min-h-[190px]">
+                    {fairs.map((fair, idx) => {
+                      const heightPercent = maxGross > 0 ? Math.max(14, Math.round((fair.totalGross / maxGross) * 100)) : 14;
+                      const isSelected = financeDateFilter === fair.date;
+
+                      return (
+                        <div
+                          key={fair.date || idx}
+                          onClick={() => setFinanceDateFilter(fair.date)}
+                          className={`flex flex-col items-center justify-end p-3 rounded-2xl transition cursor-pointer group ${
+                            isSelected 
+                              ? 'bg-amber-50/80 border-2 border-amber-400 shadow-xs' 
+                              : 'bg-stone-50/70 hover:bg-stone-100 border border-stone-200'
+                          }`}
+                          title={`Clique para filtrar os lançamentos da feira de ${fair.date}`}
+                        >
+                          {/* Value on top of bar */}
+                          <span className={`text-xs font-black mb-2 transition ${
+                            isSelected ? 'text-amber-900 scale-105' : 'text-stone-700 group-hover:text-stone-900'
+                          }`}>
+                            {formatCurrency(fair.totalGross)}
+                          </span>
+
+                          {/* Graphical Bar */}
+                          <div className="w-full h-32 flex items-end justify-center">
+                            <div
+                              style={{ height: `${heightPercent}%` }}
+                              className={`w-14 sm:w-16 rounded-xl transition-all duration-300 flex flex-col justify-end p-1.5 shadow-xs ${
+                                isSelected
+                                  ? 'bg-gradient-to-t from-amber-600 to-amber-500 ring-2 ring-amber-400/50'
+                                  : 'bg-gradient-to-t from-emerald-600 to-teal-500 group-hover:from-emerald-700 group-hover:to-teal-600'
+                              }`}
+                            >
+                              <div className="w-full bg-white/20 rounded-md py-0.5 text-center text-[9px] font-black text-white">
+                                {fair.orderCount} ped.
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Label below bar */}
+                          <div className="mt-3 text-center space-y-0.5">
+                            <span className={`text-xs font-bold block ${isSelected ? 'text-amber-900' : 'text-stone-800'}`}>
+                              {fair.date}
+                            </span>
+                            <span className="text-[10px] text-emerald-700 font-semibold block">
+                              Líq: {formatCurrency(fair.totalNet)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="text-[11px] text-stone-400 text-center mt-3">
+                    💡 Dica: Clique em uma das barras para filtrar rapidamente os lançamentos daquela feira específica na tabela abaixo.
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Statement Table of Orders (Extrato Detalhado de Lançamentos) */}
+          <div className="bg-white rounded-3xl border border-stone-200 shadow-xs overflow-hidden">
+            <div className="p-6 border-b border-stone-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-stone-50/50">
+              <div>
+                <h3 className="font-extrabold text-stone-900 text-base">Extrato Detalhado de Lançamentos</h3>
+                <p className="text-xs text-stone-500">
+                  {financeDateFilter === 'ALL'
+                    ? 'Exibindo todos os lançamentos de pedidos concluídos'
+                    : `Filtrando apenas a Feira de ${financeDateFilter}`}
+                </p>
+              </div>
+
+              <div className="text-xs font-bold text-stone-600 bg-white px-3 py-1.5 rounded-xl border border-stone-200 shrink-0">
+                Total de lançamentos: <span className="text-emerald-700 font-extrabold">{financeData?.orders?.length ?? 0}</span>
+              </div>
+            </div>
+
+            {/* Table or Empty State */}
+            {(!financeData?.orders || financeData.orders.length === 0) ? (
+              <div className="p-12 text-center text-stone-400 space-y-2">
+                <Banknote className="w-10 h-10 stroke-1 mx-auto text-stone-300" />
+                <p className="font-semibold text-stone-700 text-sm">Nenhum lançamento financeiro encontrado</p>
+                <p className="text-xs max-w-sm mx-auto text-stone-500">
+                  Quando pedidos forem marcados com o status "RETIRADO" para este dia de feira, seus valores brutos, taxas e saldo líquido aparecerão aqui.
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-100/70 text-stone-600 font-bold border-b border-stone-200 text-[11px] uppercase tracking-wider">
+                    <tr>
+                      <th className="px-5 py-3.5">Pedido #</th>
+                      <th className="px-5 py-3.5">Data da Feira</th>
+                      <th className="px-5 py-3.5">Cliente</th>
+                      <th className="px-5 py-3.5">Forma de Pagamento</th>
+                      <th className="px-5 py-3.5 text-right">Valor Bruto</th>
+                      <th className="px-5 py-3.5 text-right">
+                        Taxa Retida ({financeData?.vendor.isPro ? '0% Pro' : '5%'})
+                      </th>
+                      <th className="px-5 py-3.5 text-right">Valor Líquido</th>
+                      <th className="px-5 py-3.5 text-center">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {financeData.orders.map(order => {
+                      const isAtPickup = order.paymentMethod === 'RETIRADA';
+                      const isPixApp = order.paymentMethod === 'MERCADO_PAGO_PIX';
+
+                      return (
+                        <tr key={order.id} className="hover:bg-amber-50/30 transition">
+                          {/* Order Number */}
+                          <td className="px-5 py-3.5 font-bold font-mono text-stone-900">
+                            {order.orderNumber}
+                          </td>
+
+                          {/* Pickup Date */}
+                          <td className="px-5 py-3.5 text-stone-600">
+                            <div className="font-semibold text-stone-800">{order.pickupDate || '-'}</div>
+                            <div className="text-[10px] text-stone-400">
+                              {new Date(order.createdAt).toLocaleDateString('pt-BR')} {new Date(order.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </td>
+
+                          {/* Client */}
+                          <td className="px-5 py-3.5 text-stone-800">
+                            <div className="font-bold text-stone-900">{order.clientName}</div>
+                            {order.clientPhone && (
+                              <div className="text-[10px] text-stone-400">{order.clientPhone}</div>
+                            )}
+                          </td>
+
+                          {/* Payment Method Badge */}
+                          <td className="px-5 py-3.5">
+                            {isAtPickup ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                                <Banknote className="w-3 h-3 text-amber-700" />
+                                No Ato (Na Barraca)
+                              </span>
+                            ) : isPixApp ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-900 border border-teal-200">
+                                <CreditCard className="w-3 h-3 text-teal-700" />
+                                App (Pix Mercado Pago)
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-900 border border-blue-200">
+                                <CreditCard className="w-3 h-3 text-blue-700" />
+                                App (Cartão de Crédito)
+                              </span>
+                            )}
+                          </td>
+
+                          {/* Total Gross */}
+                          <td className="px-5 py-3.5 text-right font-bold text-stone-900">
+                            {formatCurrency(order.totalAmount)}
+                          </td>
+
+                          {/* Commission */}
+                          <td className={`px-5 py-3.5 text-right font-semibold ${
+                            order.commission === 0 ? 'text-amber-700 font-bold' : 'text-red-600'
+                          }`}>
+                            {order.commission === 0 ? 'R$ 0,00' : `- ${formatCurrency(order.commission)}`}
+                          </td>
+
+                          {/* Net Amount */}
+                          <td className="px-5 py-3.5 text-right font-black text-emerald-700">
+                            {formatCurrency(order.net)}
+                          </td>
+
+                          {/* Status */}
+                          <td className="px-5 py-3.5 text-center">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-700" />
+                              RETIRADO
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  {/* Totalizer Footer */}
+                  <tfoot className="bg-stone-100 text-stone-900 font-extrabold border-t-2 border-stone-200 text-xs">
+                    <tr>
+                      <td colSpan={4} className="px-5 py-4 text-right uppercase tracking-wider text-[11px] text-stone-600">
+                        Total Consolidado do Período ({financeData.orders.length} pedidos):
+                      </td>
+                      <td className="px-5 py-4 text-right text-stone-900 font-black">
+                        {formatCurrency(financeData.totalGross)}
+                      </td>
+                      <td className={`px-5 py-4 text-right ${financeData.totalCommission === 0 ? 'text-amber-700 font-bold' : 'text-red-600'}`}>
+                        {financeData.totalCommission === 0 ? 'R$ 0,00' : `- ${formatCurrency(financeData.totalCommission)}`}
+                      </td>
+                      <td className="px-5 py-4 text-right text-emerald-800 font-black text-sm">
+                        {formatCurrency(financeData.totalNet)}
+                      </td>
+                      <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
