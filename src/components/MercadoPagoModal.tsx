@@ -24,7 +24,7 @@ export function MercadoPagoModal({
   const [isSimulating, setIsSimulating] = useState(false);
   const [paymentApproved, setPaymentApproved] = useState(false);
 
-  const fakePixCode = `00020126580014br.gov.bcb.pix0136feiralocal-sandbox-${orderId}520400005303986540${totalAmount.toFixed(2)}5802BR5910FEIRALOCAL6009SAOPAULO62070503***6304ABCD`;
+  const fakePixCode = `00020126580014br.gov.bcb.pix0136feirae-sandbox-${orderId}520400005303986540${totalAmount.toFixed(2)}5802BR5910FEIRAE6009SAOPAULO62070503***6304ABCD`;
 
   const handleCopy = () => {
     navigator.clipboard.writeText(fakePixCode);

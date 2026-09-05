@@ -50,7 +50,7 @@ export function Navbar() {
                 </div>
                 <div>
                   <span className="text-xl font-extrabold tracking-tight text-stone-900">
-                    Feira<span className="text-feira-600">Local</span>
+                    Feira<span className="text-feira-600">e</span>
                   </span>
                   <span className="block text-[10px] text-stone-500 font-medium -mt-0.5">
                     Conectando feirantes & vizinhança

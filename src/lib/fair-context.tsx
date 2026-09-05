@@ -35,7 +35,7 @@ export function FairProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     refreshFairs();
-    const stored = localStorage.getItem('feiralocal_selected_fair');
+    const stored = localStorage.getItem('feirae_selected_fair');
     if (stored) {
       setSelectedFairIdState(stored);
     }
@@ -44,7 +44,7 @@ export function FairProvider({ children }: { children: React.ReactNode }) {
   const setSelectedFairId = (id: string) => {
     setSelectedFairIdState(id);
     try {
-      localStorage.setItem('feiralocal_selected_fair', id);
+      localStorage.setItem('feirae_selected_fair', id);
     } catch {
       // ignore
     }

@@ -337,7 +337,7 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-gradient-to-tr from-stone-900 to-stone-800 text-white rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden">
           <div className="max-w-2xl">
-            <span className="text-xs font-bold uppercase tracking-wider text-feira-400">Como funciona o FeiraLocal</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-feira-400">Como funciona o Feirae</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mt-2 leading-tight">
               Apoie o pequeno comércio com 3 passos simples
             </h2>

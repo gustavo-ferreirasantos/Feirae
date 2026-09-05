@@ -197,7 +197,7 @@ export default function AdminDashboardPage() {
             Painel Geral de Gestão da Feira
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
-            Administração da FeiraLocal
+            Administração da Feirae
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
             Moderação de barracas, controle de produtos e indicadores econômicos da feira livre.
@@ -339,7 +339,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-3">
               <h3 className="font-extrabold text-stone-900 text-base">Faturamento & Monetização da Feira</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                A <strong>FeiraLocal</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90) e <strong>Destaques Patrocinados</strong> (R$ 29,90/semana), mantendo 0% de comissão de intermediação para os produtores.
+                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90) e <strong>Destaques Patrocinados</strong> (R$ 29,90/semana), mantendo 0% de comissão de intermediação para os produtores.
               </p>
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1.5">
                 <div className="flex justify-between font-semibold">

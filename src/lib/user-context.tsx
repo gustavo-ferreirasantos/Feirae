@@ -28,7 +28,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
   // Restore session from localStorage if present
   useEffect(() => {
     try {
-      const stored = localStorage.getItem('feiralocal_user_session');
+      const stored = localStorage.getItem('feirae_user_session');
       if (stored) {
         const parsed = JSON.parse(stored);
         if (parsed?.user) {
@@ -48,7 +48,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       const user = INITIAL_USERS[0];
       setCurrentUser(user);
       setCurrentVendor(null);
-      localStorage.setItem('feiralocal_user_session', JSON.stringify({ user, vendor: null }));
+      localStorage.setItem('feirae_user_session', JSON.stringify({ user, vendor: null }));
     } else if (role === 'VENDOR') {
       const selectedVendor = vendorId 
         ? INITIAL_VENDORS.find(v => v.id === vendorId) || INITIAL_VENDORS[0]
@@ -56,12 +56,12 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       const vendorUser = INITIAL_USERS.find(u => u.id === selectedVendor.userId) || INITIAL_USERS[1];
       setCurrentUser(vendorUser);
       setCurrentVendor(selectedVendor);
-      localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: vendorUser, vendor: selectedVendor }));
+      localStorage.setItem('feirae_user_session', JSON.stringify({ user: vendorUser, vendor: selectedVendor }));
     } else if (role === 'ADMIN') {
       const adminUser = INITIAL_USERS[4];
       setCurrentUser(adminUser);
       setCurrentVendor(null);
-      localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: adminUser, vendor: null }));
+      localStorage.setItem('feirae_user_session', JSON.stringify({ user: adminUser, vendor: null }));
     }
   };
 
@@ -79,7 +79,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (res.ok && data.user) {
         setCurrentUser(data.user);
         setCurrentVendor(data.vendor || null);
-        localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: data.user, vendor: data.vendor }));
+        localStorage.setItem('feirae_user_session', JSON.stringify({ user: data.user, vendor: data.vendor }));
         return { success: true, user: data.user };
       } else {
         return { success: false, error: data.error || 'Credenciais inválidas.' };
@@ -107,7 +107,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       setCurrentVendor(null);
     }
 
-    localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: foundUser, vendor: vendorObj }));
+    localStorage.setItem('feirae_user_session', JSON.stringify({ user: foundUser, vendor: vendorObj }));
     return { success: true, user: foundUser };
   };
 
@@ -123,7 +123,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       if (res.ok && data.user) {
         setCurrentUser(data.user);
         setCurrentVendor(data.vendor || null);
-        localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: data.user, vendor: data.vendor }));
+        localStorage.setItem('feirae_user_session', JSON.stringify({ user: data.user, vendor: data.vendor }));
         return { success: true, user: data.user };
       } else {
         return { success: false, error: data.error || 'Erro ao registrar usuário.' };
@@ -138,14 +138,14 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
     const updated = { ...currentVendor, ...updates };
     setCurrentVendor(updated);
     if (currentUser) {
-      localStorage.setItem('feiralocal_user_session', JSON.stringify({ user: currentUser, vendor: updated }));
+      localStorage.setItem('feirae_user_session', JSON.stringify({ user: currentUser, vendor: updated }));
     }
   };
 
   const logout = () => {
     setCurrentUser(null);
     setCurrentVendor(null);
-    localStorage.removeItem('feiralocal_user_session');
+    localStorage.removeItem('feirae_user_session');
   };
 
   return (

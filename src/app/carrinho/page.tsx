@@ -127,7 +127,7 @@ export default function CartCheckoutPage() {
           clientId: currentUser?.id || 'user-client-1',
           clientName: currentUser?.name || 'Cliente Consumidor',
           clientPhone: currentUser?.phone || '(11) 98765-4321',
-          clientEmail: currentUser?.email || 'cliente@feiralocal.com',
+          clientEmail: currentUser?.email || 'cliente@feirae.com',
           vendorId: vendorId,
           items: items.map(i => ({
             productId: i.product.id,
