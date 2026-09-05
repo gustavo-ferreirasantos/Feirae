@@ -15,7 +15,10 @@ import {
   ArrowRight,
   AlertCircle,
   Loader2,
-  QrCode
+  QrCode,
+  Tag,
+  CheckCircle2,
+  X
 } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
@@ -38,6 +41,15 @@ export default function CartCheckoutPage() {
   const [createdOrder, setCreatedOrder] = useState<{ id: string; orderNumber: string; totalAmount: number } | null>(null);
   const [showMpModal, setShowMpModal] = useState(false);
 
+  // Coupon state
+  const [couponInput, setCouponInput] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [couponError, setCouponError] = useState<string | null>(null);
+  const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
+
+  const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+  const finalCheckoutAmount = Math.max(0, Math.round((totalAmount - discountAmount) * 100) / 100);
+
   useEffect(() => {
     if (vendorId) {
       fetch('/api/vendors/' + vendorId)
@@ -51,6 +63,47 @@ export default function CartCheckoutPage() {
         .catch(console.error);
     }
   }, [vendorId]);
+
+  const handleApplyCoupon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!couponInput.trim()) return;
+
+    setIsValidatingCoupon(true);
+    setCouponError(null);
+
+    try {
+      const res = await fetch('/api/coupons/validate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code: couponInput,
+          cartTotal: totalAmount,
+          vendorId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.valid) {
+        setCouponError(data.error || 'Cupom inválido ou não aplicável.');
+        setAppliedCoupon(null);
+      } else {
+        setAppliedCoupon({
+          code: data.coupon.code,
+          discountAmount: data.discountAmount,
+        });
+        setCouponError(null);
+      }
+    } catch {
+      setCouponError('Erro ao validar o cupom.');
+    } finally {
+      setIsValidatingCoupon(false);
+    }
+  };
+
+  const handleRemoveCoupon = () => {
+    setAppliedCoupon(null);
+    setCouponInput('');
+    setCouponError(null);
+  };
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -83,6 +136,7 @@ export default function CartCheckoutPage() {
           pickupDate: pickupDateStr,
           pickupLocation: pickupLocStr,
           notes,
+          couponCode: appliedCoupon?.code,
         }),
       });
 
@@ -162,6 +216,15 @@ export default function CartCheckoutPage() {
           <AlertCircle className="w-5 h-5 text-purple-600 shrink-0" />
           <span>
             <strong>Modo Administrador:</strong> Administradores não realizam compras de pré-pedidos. Para realizar compras de teste, utilize uma conta de cliente.
+          </span>
+        </div>
+      )}
+
+      {currentUser?.role === 'VENDOR' && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-3">
+          <AlertCircle className="w-5 h-5 text-amber-600 shrink-0" />
+          <span>
+            <strong>Modo Feirante:</strong> Feirantes não realizam compras/reservas de produtos. Para realizar compras, utilize uma conta de cliente.
           </span>
         </div>
       )}
@@ -360,6 +423,63 @@ export default function CartCheckoutPage() {
             </div>
 
             <div>
+              <label className="text-xs font-bold text-stone-700 block mb-2 flex items-center gap-1.5">
+                <Tag className="w-4 h-4 text-feira-600" />
+                Cupom de Desconto:
+              </label>
+
+              {!appliedCoupon ? (
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    value={couponInput}
+                    onChange={e => setCouponInput(e.target.value.toUpperCase())}
+                    placeholder="Ex: FEIRA10"
+                    className="flex-1 px-3 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-feira-500 uppercase font-mono font-bold"
+                  />
+                  <button
+                    type="button"
+                    onClick={handleApplyCoupon}
+                    disabled={isValidatingCoupon || !couponInput.trim()}
+                    className="px-4 py-2 bg-stone-900 hover:bg-stone-800 text-white text-xs font-bold rounded-xl transition disabled:opacity-50 flex items-center gap-1 cursor-pointer shrink-0"
+                  >
+                    {isValidatingCoupon ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Aplicar'}
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    <div>
+                      <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                        <span>Cupom {appliedCoupon.code}</span>
+                        <span className="bg-emerald-200 text-emerald-900 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                          -{formatCurrency(appliedCoupon.discountAmount)}
+                        </span>
+                      </div>
+                      <div className="text-[10px] text-emerald-700 font-medium">Desconto aplicado com sucesso!</div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleRemoveCoupon}
+                    className="p-1 text-emerald-700 hover:text-red-600 hover:bg-emerald-100 rounded-lg transition"
+                    title="Remover cupom"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+
+              {couponError && (
+                <p className="mt-1.5 text-xs text-red-600 font-semibold flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{couponError}</span>
+                </p>
+              )}
+            </div>
+
+            <div>
               <label className="text-xs font-semibold text-stone-700 block mb-1">
                 Instruções para o Feirante (Opcional)
               </label>
@@ -374,22 +494,28 @@ export default function CartCheckoutPage() {
 
             <div className="pt-4 border-t border-stone-100 space-y-2">
               <div className="flex justify-between text-xs text-stone-500">
-                <span>Total de itens:</span>
-                <span>{totalItems} unid(s)</span>
+                <span>Subtotal de itens:</span>
+                <span>{formatCurrency(totalAmount)}</span>
               </div>
+              {appliedCoupon && (
+                <div className="flex justify-between text-xs text-emerald-600 font-bold">
+                  <span>Desconto ({appliedCoupon.code}):</span>
+                  <span>- {formatCurrency(appliedCoupon.discountAmount)}</span>
+                </div>
+              )}
               <div className="flex justify-between text-xs text-stone-500">
                 <span>Taxa de serviço do app:</span>
                 <span className="text-emerald-600 font-semibold">Grátis (Demonstrativo)</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-stone-900 pt-2 border-t border-stone-100">
                 <span>Valor Total:</span>
-                <span className="text-feira-700">{formatCurrency(totalAmount)}</span>
+                <span className="text-feira-700">{formatCurrency(finalCheckoutAmount)}</span>
               </div>
             </div>
 
             <button
               type="submit"
-              disabled={isSubmitting || currentUser?.role === 'ADMIN'}
+              disabled={isSubmitting || currentUser?.role === 'ADMIN' || currentUser?.role === 'VENDOR'}
               className="w-full py-3.5 px-4 rounded-xl bg-feira-600 hover:bg-feira-700 text-white font-extrabold text-sm shadow-md transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer"
             >
               {isSubmitting ? (
@@ -399,9 +525,11 @@ export default function CartCheckoutPage() {
                 </>
               ) : currentUser?.role === 'ADMIN' ? (
                 <span>Administrador não pode finalizar pedidos</span>
+              ) : currentUser?.role === 'VENDOR' ? (
+                <span>Feirante não pode finalizar pedidos</span>
               ) : (
                 <>
-                  <span>Confirmar Pré-pedido ({formatCurrency(totalAmount)})</span>
+                  <span>Confirmar Pré-pedido ({formatCurrency(finalCheckoutAmount)})</span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

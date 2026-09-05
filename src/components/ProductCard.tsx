@@ -15,6 +15,7 @@ export function ProductCard({ product }: { product: Product }) {
   const [feedback, setFeedback] = useState<string | null>(null);
 
   const isAdmin = currentUser?.role === 'ADMIN';
+  const isVendor = currentUser?.role === 'VENDOR';
   const cartItem = items.find(i => i.product.id === product.id);
   const inCartQty = cartItem?.quantity || 0;
   const isOutOfStock = product.stock <= 0;
@@ -22,6 +23,11 @@ export function ProductCard({ product }: { product: Product }) {
   const handleAdd = () => {
     if (isAdmin) {
       setFeedback('Administradores não realizam compras de pré-pedidos.');
+      setTimeout(() => setFeedback(null), 3000);
+      return;
+    }
+    if (isVendor) {
+      setFeedback('Feirantes não realizam compras/reservas de produtos.');
       setTimeout(() => setFeedback(null), 3000);
       return;
     }
@@ -119,9 +125,9 @@ export function ProductCard({ product }: { product: Product }) {
 
           <button
             onClick={handleAdd}
-            disabled={isOutOfStock || isAdmin}
+            disabled={isOutOfStock || isAdmin || isVendor}
             className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-              isAdmin
+              isAdmin || isVendor
                 ? 'bg-stone-100 text-stone-400 cursor-not-allowed border border-stone-200'
                 : isOutOfStock
                 ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
@@ -129,10 +135,18 @@ export function ProductCard({ product }: { product: Product }) {
                 ? 'bg-feira-600 text-white hover:bg-feira-700 shadow-xs'
                 : 'bg-stone-900 text-white hover:bg-feira-600 shadow-xs'
             }`}
-            title={isAdmin ? 'Administradores não realizam compras de pré-pedidos' : undefined}
+            title={
+              isAdmin
+                ? 'Administradores não realizam compras de pré-pedidos'
+                : isVendor
+                ? 'Feirantes não realizam compras de pré-pedidos'
+                : undefined
+            }
           >
             {isAdmin ? (
               <span>Modo Admin</span>
+            ) : isVendor ? (
+              <span>Modo Feirante</span>
             ) : inCartQty > 0 ? (
               <>
                 <Check className="w-3.5 h-3.5" />

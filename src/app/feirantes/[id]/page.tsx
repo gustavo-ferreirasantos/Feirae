@@ -2,12 +2,13 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { Store, MapPin, Calendar, Clock, Star, MessageSquare, ArrowLeft, AlertCircle } from 'lucide-react';
+import { Store, MapPin, Calendar, Clock, Star, MessageSquare, ArrowLeft, AlertCircle, MessageCircle, Award } from 'lucide-react';
 import Link from 'next/link';
 import { Vendor, Product, PickupWindow, Review } from '@/types';
 import { ProductCard } from '@/components/ProductCard';
 import { StarRating } from '@/components/StarRating';
 import { formatDate } from '@/lib/utils';
+import { getVendorContactLink } from '@/lib/whatsapp';
 
 export default function VendorProfilePage() {
   const params = useParams();
@@ -92,6 +93,12 @@ export default function VendorProfilePage() {
           ) : (
             <div className="w-full h-full bg-gradient-to-r from-feira-600 to-feira-800" />
           )}
+          {(vendor.isSubscriber || vendor.plan === 'PRO') && (
+            <span className="absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1.5 z-10">
+              <Award className="w-4 h-4 text-stone-900" />
+              Parceiro Pro
+            </span>
+          )}
           <span className="absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-white/90 text-stone-800 backdrop-blur-xs shadow-xs">
             {vendor.category}
           </span>
@@ -124,9 +131,21 @@ export default function VendorProfilePage() {
               </div>
             </div>
 
-            <div className="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 px-3.5 py-2 rounded-xl border border-stone-200">
-              <MapPin className="w-4 h-4 text-feira-600 shrink-0" />
-              <span>{vendor.fairLocation}</span>
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 px-3.5 py-2 rounded-xl border border-stone-200">
+                <MapPin className="w-4 h-4 text-feira-600 shrink-0" />
+                <span>{vendor.fairLocation}</span>
+              </div>
+
+              <a
+                href={getVendorContactLink(vendor.whatsappPhone || '87998018279', vendor.businessName)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 px-4 py-2 rounded-xl shadow-xs transition cursor-pointer"
+              >
+                <MessageCircle className="w-4 h-4 fill-white/20" />
+                <span>Falar no WhatsApp</span>
+              </a>
             </div>
           </div>
 

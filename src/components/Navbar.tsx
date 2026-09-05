@@ -183,8 +183,8 @@ export function Navbar() {
               {/* Notification Bell (for logged in users) */}
               {currentUser && <NotificationBell />}
 
-              {/* Cart Button (Disabled for Admin) */}
-              {activeRole !== 'ADMIN' && (
+              {/* Cart Button (Disabled for Admin & Vendor) */}
+              {activeRole !== 'ADMIN' && activeRole !== 'VENDOR' && (
                 <Link
                   href="/carrinho"
                   className="relative p-2 text-stone-700 hover:text-stone-900 rounded-xl hover:bg-stone-100 transition flex items-center gap-1.5"

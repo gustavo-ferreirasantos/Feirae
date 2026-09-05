@@ -20,6 +20,12 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-feira-600 to-feira-800" />
         )}
+        {(vendor.isSubscriber || vendor.plan === 'PRO') && (
+          <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1 z-10">
+            <Award className="w-3 h-3 text-stone-900" />
+            Parceiro Pro
+          </span>
+        )}
         <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/90 text-stone-800 backdrop-blur-xs shadow-xs">
           {vendor.category}
         </span>

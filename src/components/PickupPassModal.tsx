@@ -11,10 +11,12 @@ import {
   Clock, 
   ShoppingBag, 
   User,
-  ShieldCheck
+  ShieldCheck,
+  MessageCircle
 } from 'lucide-react';
 import { Order } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { getPickupPassWhatsAppLink } from '@/lib/whatsapp';
 
 interface PickupPassModalProps {
   order: Order;
@@ -112,10 +114,20 @@ export function PickupPassModal({ order, onClose }: PickupPassModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="p-3 bg-stone-50 border-t border-stone-100 text-center">
+        <div className="p-4 bg-stone-50 border-t border-stone-100 space-y-2">
+          <a
+            href={getPickupPassWhatsAppLink(order)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+          >
+            <MessageCircle className="w-4 h-4 fill-white/20" />
+            <span>Enviar no WhatsApp do Feirante</span>
+          </a>
+
           <button
             onClick={onClose}
-            className="w-full py-2.5 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs transition cursor-pointer"
+            className="w-full py-2 rounded-xl bg-stone-200/80 hover:bg-stone-300 text-stone-700 font-bold text-xs transition cursor-pointer"
           >
             Fechar Pass
           </button>

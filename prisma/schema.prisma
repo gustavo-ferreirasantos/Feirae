@@ -35,11 +35,22 @@ enum PaymentStatus {
   CANCELADO
 }
 
+enum DiscountType {
+  PERCENTAGE
+  FIXED
+}
+
+enum VendorPlan {
+  FREE
+  PRO
+}
+
 model User {
   id            String         @id @default(cuid())
   name          String
   email         String         @unique
   phone         String?
+  whatsappPhone String?
   passwordHash  String?
   role          Role           @default(CLIENT)
   createdAt     DateTime       @default(now())
@@ -60,10 +71,13 @@ model Vendor {
   category       String
   fairLocation   String
   boothNumber    String?
+  whatsappPhone  String?
   coverImage     String?
   avatar         String?
   rating         Float          @default(5.0)
   ratingCount    Int            @default(0)
+  plan           VendorPlan     @default(FREE)
+  maxProducts    Int            @default(5)
   isSubscriber   Boolean        @default(false)
   commissionRate Float          @default(0.05)
   active         Boolean        @default(true)
@@ -74,6 +88,7 @@ model Vendor {
   orders         Order[]
   pickupWindows  PickupWindow[]
   reviews        Review[]
+  coupons        Coupon[]
 }
 
 model Product {
@@ -120,6 +135,9 @@ model Order {
   vendorId       String
   vendor         Vendor         @relation(fields: [vendorId], references: [id])
   totalAmount    Float
+  couponCode     String?
+  discountAmount Float          @default(0)
+  originalAmount Float?
   status         OrderStatus    @default(NOVO)
   paymentMethod  PaymentMethod  @default(RETIRADA)
   paymentStatus  PaymentStatus  @default(PENDENTE)
@@ -173,4 +191,20 @@ model Notification {
   orderId   String?
   read      Boolean  @default(false)
   createdAt DateTime @default(now())
+}
+
+model Coupon {
+  id            String       @id @default(cuid())
+  code          String       @unique
+  discountType  DiscountType @default(PERCENTAGE)
+  discountValue Float
+  minOrderValue Float        @default(0)
+  maxUses       Int?
+  usedCount     Int          @default(0)
+  expiresAt     DateTime?
+  vendorId      String?
+  vendor        Vendor?      @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 }

@@ -11,8 +11,11 @@ export interface User {
   name: string;
   email: string;
   phone?: string;
+  whatsappPhone?: string;
   role: Role;
 }
+
+export type VendorPlan = 'FREE' | 'PRO';
 
 export interface Vendor {
   id: string;
@@ -23,10 +26,13 @@ export interface Vendor {
   category: string;
   fairLocation: string;
   boothNumber?: string;
+  whatsappPhone?: string;
   coverImage?: string;
   avatar?: string;
   rating: number;
   ratingCount: number;
+  plan?: VendorPlan;
+  maxProducts?: number;
   isSubscriber: boolean;
   commissionRate: number;
   active: boolean;
@@ -69,6 +75,23 @@ export interface OrderItem {
   subtotal: number;
 }
 
+export type DiscountType = 'PERCENTAGE' | 'FIXED';
+
+export interface Coupon {
+  id: string;
+  code: string;
+  discountType: DiscountType;
+  discountValue: number;
+  minOrderValue: number;
+  maxUses?: number;
+  usedCount: number;
+  expiresAt?: string;
+  vendorId?: string;
+  active: boolean;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
 export interface Order {
   id: string;
   orderNumber: string;
@@ -79,6 +102,9 @@ export interface Order {
   vendorId: string;
   vendorName?: string;
   totalAmount: number;
+  couponCode?: string;
+  discountAmount?: number;
+  originalAmount?: number;
   status: OrderStatus;
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;

@@ -16,10 +16,12 @@ import {
   Loader2,
   Ban,
   Eye,
-  EyeOff
+  EyeOff,
+  MessageCircle
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
+import { getClientReadyNotifyLink } from '@/lib/whatsapp';
 
 interface OrderKanbanProps {
   orders: Order[];
@@ -90,6 +92,12 @@ export function OrderKanban({ orders, onUpdateStatus }: OrderKanbanProps) {
       setLoadingOrderId(order.id);
       try {
         await onUpdateStatus(order.id, nextStatus);
+        
+        // Disparo/Notificação automática via WhatsApp se o pedido foi marcado como PRONTO
+        if (nextStatus === 'PRONTO') {
+          const waUrl = getClientReadyNotifyLink(order);
+          window.open(waUrl, '_blank');
+        }
       } finally {
         setLoadingOrderId(null);
       }
@@ -237,6 +245,17 @@ export function OrderKanban({ orders, onUpdateStatus }: OrderKanbanProps) {
                           >
                             <XCircle className="w-4 h-4" />
                           </button>
+
+                          <a
+                            href={getClientReadyNotifyLink(order)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="px-2.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[11px] font-bold transition flex items-center justify-center shrink-0 cursor-pointer"
+                            title="Avisar cliente no WhatsApp com 1 clique"
+                          >
+                            <MessageCircle className="w-4 h-4 fill-emerald-600/20" />
+                          </a>
+
                           <button
                             onClick={() => handleAdvance(order)}
                             disabled={loadingOrderId === order.id}

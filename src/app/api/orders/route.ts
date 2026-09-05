@@ -88,6 +88,47 @@ export async function POST(request: Request) {
           });
         }
 
+        // Validate coupon if provided
+        let discountAmount = 0;
+        let finalTotal = Math.round(calculatedTotal * 100) / 100;
+        let appliedCouponCode: string | null = null;
+
+        if (body.couponCode) {
+          const formattedCode = body.couponCode.trim().toUpperCase();
+          const coupon = await prisma.coupon.findUnique({ where: { code: formattedCode } });
+
+          if (!coupon || !coupon.active) {
+            return NextResponse.json({ error: 'Cupom inválido ou inativo.' }, { status: 400 });
+          }
+          if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) {
+            return NextResponse.json({ error: 'Este cupom está expirado.' }, { status: 400 });
+          }
+          if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+            return NextResponse.json({ error: 'Este cupom já atingiu o limite de utilizações.' }, { status: 400 });
+          }
+          if (calculatedTotal < coupon.minOrderValue) {
+            return NextResponse.json({
+              error: `O valor mínimo para utilizar este cupom é de R$ ${coupon.minOrderValue.toFixed(2).replace('.', ',')}.`,
+            }, { status: 400 });
+          }
+          if (coupon.vendorId && coupon.vendorId !== vendor.id) {
+            return NextResponse.json({ error: 'Este cupom é exclusivo para outra banca.' }, { status: 400 });
+          }
+
+          appliedCouponCode = coupon.code;
+          if (coupon.discountType === 'PERCENTAGE') {
+            discountAmount = Math.round((calculatedTotal * (coupon.discountValue / 100)) * 100) / 100;
+          } else {
+            discountAmount = Math.min(calculatedTotal, coupon.discountValue);
+          }
+          finalTotal = Math.max(0, Math.round((calculatedTotal - discountAmount) * 100) / 100);
+
+          await prisma.coupon.update({
+            where: { id: coupon.id },
+            data: { usedCount: { increment: 1 } },
+          });
+        }
+
         const orderNum = `FL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
         const createdOrder = await prisma.order.create({
@@ -98,7 +139,10 @@ export async function POST(request: Request) {
             clientPhone: body.clientPhone,
             clientEmail: body.clientEmail,
             vendorId: vendor.id,
-            totalAmount: Math.round(calculatedTotal * 100) / 100,
+            totalAmount: finalTotal,
+            couponCode: appliedCouponCode,
+            discountAmount: discountAmount,
+            originalAmount: Math.round(calculatedTotal * 100) / 100,
             status: 'NOVO',
             paymentMethod: body.paymentMethod || 'RETIRADA',
             paymentStatus: body.paymentMethod === 'RETIRADA' ? 'PAGO_NA_RETIRADA' : 'PENDENTE',

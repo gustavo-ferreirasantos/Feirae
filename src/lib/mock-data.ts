@@ -1,32 +1,36 @@
-import { User, Vendor, Product, PickupWindow, Order, Notification, Review } from '@/types';
+import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon } from '@/types';
 
 export const INITIAL_USERS: User[] = [
   {
     id: 'user-client-1',
     name: 'Maria Oliveira',
     email: 'maria.oliveira@email.com',
-    phone: '(11) 98765-4321',
+    phone: '(87) 99801-8279',
+    whatsappPhone: '(87) 99801-8279',
     role: 'CLIENT',
   },
   {
     id: 'user-vendor-1',
     name: 'José Pereira (Zé dos Orgânicos)',
     email: 'ze.organicos@feiralocal.com',
-    phone: '(11) 97654-3210',
+    phone: '(87) 99801-8279',
+    whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
   },
   {
     id: 'user-vendor-2',
     name: 'Dona Neusa (Doces da Vovó)',
     email: 'neusa.doces@feiralocal.com',
-    phone: '(11) 96543-2109',
+    phone: '(87) 99801-8279',
+    whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
   },
   {
     id: 'user-vendor-3',
     name: 'Antônio Queijeiro (Serra da Canastra)',
     email: 'antonio.queijos@feiralocal.com',
-    phone: '(11) 95432-1098',
+    phone: '(87) 99801-8279',
+    whatsappPhone: '(87) 99801-8279',
     role: 'VENDOR',
   },
   {
@@ -34,6 +38,7 @@ export const INITIAL_USERS: User[] = [
     name: 'Administração Feira Livre Central',
     email: 'admin@feiralocal.com',
     phone: '(11) 3333-4444',
+    whatsappPhone: '(87) 99801-8279',
     role: 'ADMIN',
   },
 ];
@@ -48,6 +53,7 @@ export const INITIAL_VENDORS: Vendor[] = [
     category: 'Hortifrúti',
     fairLocation: 'Feira Livre da Praça da Matriz - Barraca 14',
     boothNumber: 'B-14',
+    whatsappPhone: '(87) 99801-8279',
     coverImage: 'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=1200&q=80',
     avatar: 'https://images.unsplash.com/photo-1544717305-2782549b5136?auto=format&fit=crop&w=200&q=80',
     rating: 4.9,
@@ -65,6 +71,7 @@ export const INITIAL_VENDORS: Vendor[] = [
     category: 'Doces & Panificação',
     fairLocation: 'Feira Livre da Praça da Matriz - Barraca 08',
     boothNumber: 'B-08',
+    whatsappPhone: '(87) 99801-8279',
     coverImage: 'https://images.unsplash.com/photo-1509440159596-0249088772ff?auto=format&fit=crop&w=1200&q=80',
     avatar: 'https://images.unsplash.com/photo-1581579438747-1dc8d17bbce4?auto=format&fit=crop&w=200&q=80',
     rating: 4.8,
@@ -82,6 +89,7 @@ export const INITIAL_VENDORS: Vendor[] = [
     category: 'Queijos & Laticínios',
     fairLocation: 'Feira Livre da Praça da Matriz - Barraca 22',
     boothNumber: 'B-22',
+    whatsappPhone: '(87) 99801-8279',
     coverImage: 'https://images.unsplash.com/photo-1452195100486-9cc805987862?auto=format&fit=crop&w=1200&q=80',
     avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
     rating: 5.0,
@@ -470,4 +478,52 @@ export const INITIAL_NOTIFICATIONS: Notification[] = [
     read: false,
     createdAt: new Date(Date.now() - 3600000 * 4).toISOString(),
   }
+];
+
+export const INITIAL_COUPONS: Coupon[] = [
+  {
+    id: 'coup-1',
+    code: 'FEIRA10',
+    discountType: 'PERCENTAGE',
+    discountValue: 10,
+    minOrderValue: 20.00,
+    maxUses: 100,
+    usedCount: 5,
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'coup-2',
+    code: 'FEIRA5',
+    discountType: 'FIXED',
+    discountValue: 5.00,
+    minOrderValue: 15.00,
+    maxUses: 50,
+    usedCount: 2,
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'coup-3',
+    code: 'EXPIRADO10',
+    discountType: 'PERCENTAGE',
+    discountValue: 10,
+    minOrderValue: 0,
+    maxUses: 10,
+    usedCount: 0,
+    expiresAt: new Date(Date.now() - 86400000 * 2).toISOString(), // 2 dias atrás
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
+  {
+    id: 'coup-4',
+    code: 'ESGOTADO5',
+    discountType: 'FIXED',
+    discountValue: 5.00,
+    minOrderValue: 10.00,
+    maxUses: 3,
+    usedCount: 3, // esgotado
+    active: true,
+    createdAt: new Date().toISOString(),
+  },
 ];

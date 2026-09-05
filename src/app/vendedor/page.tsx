@@ -23,7 +23,9 @@ import {
   MessageSquare,
   ShoppingBag,
   Search,
-  Filter
+  Filter,
+  Award,
+  Sparkles
 } from 'lucide-react';
 import { Order, Product, Vendor, OrderStatus, PickupWindow, Review } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -67,6 +69,7 @@ export default function VendorDashboardPage() {
   const [bioLocation, setBioLocation] = useState('');
   const [bioBoothNumber, setBioBoothNumber] = useState('');
   const [bioCategory, setBioCategory] = useState('');
+  const [bioWhatsappPhone, setBioWhatsappPhone] = useState('87998018279');
   const [savingBio, setSavingBio] = useState(false);
   const [bioSuccessFeedback, setBioSuccessFeedback] = useState<string | null>(null);
 
@@ -79,6 +82,9 @@ export default function VendorDashboardPage() {
   const [winMax, setWinMax] = useState('30');
   const [savingWindow, setSavingWindow] = useState(false);
 
+  // Plan Toggle State
+  const [togglingPlan, setTogglingPlan] = useState(false);
+
   const isVendor = currentUser?.role === 'VENDOR';
   const activeVendorId = currentVendor?.id || 'vendor-1';
 
@@ -89,6 +95,7 @@ export default function VendorDashboardPage() {
       setBioLocation(currentVendor.fairLocation || '');
       setBioBoothNumber(currentVendor.boothNumber || '');
       setBioCategory(currentVendor.category || 'Hortifrúti');
+      setBioWhatsappPhone(currentVendor.whatsappPhone || '87998018279');
       setWinLoc(currentVendor.fairLocation || 'Feira Livre da Praça da Matriz');
     }
   }, [currentVendor]);
@@ -141,7 +148,45 @@ export default function VendorDashboardPage() {
     }
   };
 
+  const handleTogglePlan = async () => {
+    setTogglingPlan(true);
+    try {
+      const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
+      const newPlan: 'FREE' | 'PRO' = isPro ? 'FREE' : 'PRO';
+      const payload = {
+        plan: newPlan,
+        isSubscriber: !isPro,
+        maxProducts: !isPro ? 9999 : 5,
+        commissionRate: !isPro ? 0 : 0.05,
+      };
+
+      const res = await fetch(`/api/vendors/${activeVendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        updateCurrentVendor(payload);
+        loadVendorData();
+      }
+    } catch (err) {
+      console.error('Erro ao alterar plano:', err);
+    } finally {
+      setTogglingPlan(false);
+    }
+  };
+
   const openNewProductModal = () => {
+    const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
+    const activeCount = products.filter(p => p.isActive).length;
+    const maxLimit = currentVendor?.maxProducts || 5;
+
+    if (!isPro && activeCount >= maxLimit) {
+      alert(`⚠️ Limite de ${maxLimit} produtos do Plano Gratuito atingido!\n\nFaça upgrade para o Plano Feirante Pro para cadastrar produtos ilimitados, obter a badge ⭐ Parceiro Pro e ter 0% de comissão por pedido!`);
+      return;
+    }
+
     setEditingProduct(null);
     setFormName('');
     setFormDesc('');
@@ -228,6 +273,7 @@ export default function VendorDashboardPage() {
         fairLocation: bioLocation,
         boothNumber: bioBoothNumber,
         category: bioCategory,
+        whatsappPhone: bioWhatsappPhone,
       };
 
       const res = await fetch(`/api/vendors/${activeVendorId}`, {
@@ -564,6 +610,18 @@ export default function VendorDashboardPage() {
                 />
               </div>
 
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">WhatsApp Comercial (para alertas e contato)</label>
+                <input
+                  type="text"
+                  required
+                  value={bioWhatsappPhone}
+                  onChange={e => setBioWhatsappPhone(e.target.value)}
+                  placeholder="Ex: (87) 99801-8279"
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-medium"
+                />
+              </div>
+
               <div className="pt-3 border-t border-stone-100 flex gap-2">
                 <button
                   type="button"
@@ -763,6 +821,85 @@ export default function VendorDashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* Plan Subscription & Usage Card (US18 Freemium) */}
+      {(() => {
+        const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
+        const activeCount = products.filter(p => p.isActive).length;
+        const maxLimit = currentVendor?.maxProducts || 5;
+        const usagePercentage = isPro ? 100 : Math.min(100, Math.round((activeCount / maxLimit) * 100));
+
+        return (
+          <div className="bg-white rounded-3xl p-6 border border-stone-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-6">
+            <div className="flex-1 space-y-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-stone-400 uppercase tracking-wider">Meu Plano Atual:</span>
+                {isPro ? (
+                  <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                    <Award className="w-3.5 h-3.5 text-amber-700" />
+                    Plano Feirante Pro (Produtos Ilimitados)
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-xs font-bold bg-stone-100 text-stone-700 border border-stone-200">
+                    Plano Gratuito (Até 5 Produtos)
+                  </span>
+                )}
+              </div>
+
+              <div>
+                <div className="flex justify-between items-center text-xs text-stone-700 font-semibold mb-1">
+                  <span>Uso do Limite de Produtos:</span>
+                  <span className={!isPro && activeCount >= maxLimit ? 'text-red-600 font-bold' : 'text-stone-900 font-extrabold'}>
+                    {isPro ? `${activeCount} produtos cadastrados (Ilimitado)` : `${activeCount} de ${maxLimit} produtos (${usagePercentage}%)`}
+                  </span>
+                </div>
+
+                {!isPro && (
+                  <div className="w-full h-2.5 bg-stone-100 rounded-full overflow-hidden">
+                    <div
+                      className={`h-full transition-all duration-500 rounded-full ${
+                        activeCount >= maxLimit ? 'bg-red-500' : activeCount >= maxLimit - 1 ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`}
+                      style={{ width: `${usagePercentage}%` }}
+                    />
+                  </div>
+                )}
+              </div>
+
+              <p className="text-[11px] text-stone-500">
+                {isPro
+                  ? 'Você é um Feirante Pro! Tem comissão 0% por pedido, produtos ilimitados e selo ⭐ Parceiro Pro de destaque.'
+                  : activeCount >= maxLimit
+                  ? '⚠️ Você atingiu o limite de 5 produtos do plano gratuito. Faça upgrade para o Plano Pro para liberar o catálogo ilimitado!'
+                  : `Faltam ${maxLimit - activeCount} vaga(s) para atingir o limite de produtos do plano gratuito.`}
+              </p>
+            </div>
+
+            <div className="shrink-0">
+              <button
+                onClick={handleTogglePlan}
+                disabled={togglingPlan}
+                className={`px-5 py-3 rounded-2xl font-bold text-xs shadow-md transition flex items-center gap-2 cursor-pointer ${
+                  isPro
+                    ? 'bg-stone-100 hover:bg-stone-200 text-stone-800 border border-stone-200'
+                    : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-stone-950 shadow-amber-500/20'
+                }`}
+              >
+                {togglingPlan ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : isPro ? (
+                  <span>Alternar para Plano Gratuito</span>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 text-stone-950" />
+                    <span>Assinar Plano Feirante Pro (R$ 49,90/mês)</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
