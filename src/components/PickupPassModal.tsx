@@ -12,7 +12,8 @@ import {
   ShoppingBag, 
   User,
   ShieldCheck,
-  MessageCircle
+  MessageCircle,
+  Scale
 } from 'lucide-react';
 import { Order } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -101,6 +102,21 @@ export function PickupPassModal({ order, onClose }: PickupPassModalProps) {
               <Calendar className="w-3.5 h-3.5 text-stone-400 shrink-0" />
               <span>{order.pickupDate}</span>
             </div>
+
+            {order.items?.some(i => i.measuredWeight != null) && (
+              <div className="pt-2 border-t border-stone-200/70 text-[10px] text-amber-800 space-y-1 bg-amber-50/70 -mx-1 px-2 py-1.5 rounded-lg">
+                <div className="font-bold flex items-center gap-1 text-[10px] text-amber-900">
+                  <Scale className="w-3 h-3 text-amber-700" />
+                  <span>Pesagem Aferida na Balança:</span>
+                </div>
+                {order.items.filter(i => i.measuredWeight != null).map(i => (
+                  <div key={i.id} className="flex justify-between font-medium">
+                    <span>{i.productName}:</span>
+                    <strong>{i.measuredWeight} kg ({formatCurrency(i.subtotal)})</strong>
+                  </div>
+                ))}
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-2 border-t border-stone-200/70 text-[11px]">
               <span className="text-stone-500">Total:</span>

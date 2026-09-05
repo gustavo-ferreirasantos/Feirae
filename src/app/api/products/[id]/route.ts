@@ -32,6 +32,7 @@ async function handleUpdate(request: Request, id: string) {
           ...(body.stock !== undefined && { stock: Number(body.stock) }),
           ...(body.imageUrl !== undefined && { imageUrl: body.imageUrl }),
           ...(body.isOrganic !== undefined && { isOrganic: Boolean(body.isOrganic) }),
+          ...(body.isWeighable !== undefined && { isWeighable: Boolean(body.isWeighable) }),
           ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),
         },
         include: { vendor: { select: { businessName: true } } },

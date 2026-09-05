@@ -42,7 +42,7 @@ export async function PATCH(
 ) {
   try {
     const body = await request.json();
-    const { status } = body;
+    const { status, itemId, measuredWeight, items } = body;
 
     // 1. Try Prisma Neon
     try {
@@ -52,42 +52,98 @@ export async function PATCH(
       });
 
       if (existingOrder) {
-        const isNowCancelled = status === 'CANCELADO' && existingOrder.status !== 'CANCELADO';
+        // A. Handle item measured weight update
+        if (itemId && measuredWeight !== undefined) {
+          const itemToUpdate = existingOrder.items.find(it => it.id === itemId);
+          if (itemToUpdate) {
+            const weight = Number(measuredWeight);
+            const itemSubtotal = Number((itemToUpdate.unitPrice * weight).toFixed(2));
+            await prisma.orderItem.update({
+              where: { id: itemId },
+              data: { measuredWeight: weight, subtotal: itemSubtotal },
+            });
 
-        if (isNowCancelled) {
-          // Restore stock for cancelled order items
-          for (const it of existingOrder.items) {
-            await prisma.product.update({
-              where: { id: it.productId },
-              data: { stock: { increment: it.quantity } },
-            }).catch(() => {});
+            // Recalculate total amount
+            const allItems = await prisma.orderItem.findMany({ where: { orderId: existingOrder.id } });
+            const sumSubtotals = allItems.reduce((acc, it) => acc + it.subtotal, 0);
+            const discount = existingOrder.discountAmount || 0;
+            const newTotal = Math.max(0, Number((sumSubtotals - discount).toFixed(2)));
+
+            await prisma.order.update({
+              where: { id: existingOrder.id },
+              data: { totalAmount: newTotal },
+            });
+
+            store.updateOrderItemWeight(params.id, itemId, weight);
           }
+        } else if (Array.isArray(items)) {
+          for (const it of items) {
+            if (it.id && it.measuredWeight !== undefined) {
+              const existingItem = existingOrder.items.find(i => i.id === it.id);
+              if (existingItem) {
+                const weight = Number(it.measuredWeight);
+                const itemSubtotal = Number((existingItem.unitPrice * weight).toFixed(2));
+                await prisma.orderItem.update({
+                  where: { id: it.id },
+                  data: { measuredWeight: weight, subtotal: itemSubtotal },
+                });
+                store.updateOrderItemWeight(params.id, it.id, weight);
+              }
+            }
+          }
+          const allItems = await prisma.orderItem.findMany({ where: { orderId: existingOrder.id } });
+          const sumSubtotals = allItems.reduce((acc, it) => acc + it.subtotal, 0);
+          const discount = existingOrder.discountAmount || 0;
+          const newTotal = Math.max(0, Number((sumSubtotals - discount).toFixed(2)));
+
+          await prisma.order.update({
+            where: { id: existingOrder.id },
+            data: { totalAmount: newTotal },
+          });
         }
 
-        const updatedOrder = await prisma.order.update({
+        // B. Handle status update if provided
+        if (status) {
+          const isNowCancelled = status === 'CANCELADO' && existingOrder.status !== 'CANCELADO';
+
+          if (isNowCancelled) {
+            // Restore stock for cancelled order items
+            for (const it of existingOrder.items) {
+              await prisma.product.update({
+                where: { id: it.productId },
+                data: { stock: { increment: it.quantity } },
+              }).catch(() => {});
+            }
+          }
+
+          await prisma.order.update({
+            where: { id: existingOrder.id },
+            data: { status: status as OrderStatus },
+          });
+
+          // Notify client about status update
+          const statusLabel = status === 'EM_PREPARO' ? 'Em Preparo' : status === 'PRONTO' ? 'Pronto para Retirada' : status === 'RETIRADO' ? 'Entregue / Concluído' : 'Cancelado';
+          await prisma.notification.create({
+            data: {
+              userId: existingOrder.clientId,
+              title: `Pedido ${existingOrder.orderNumber} Atualizado`,
+              message: `Status atual: ${statusLabel} na barraca ${existingOrder.vendor.businessName}.`,
+              type: 'ORDER_STATUS',
+              orderId: existingOrder.id,
+            },
+          }).catch(() => {});
+
+          store.updateOrderStatus(params.id, status);
+        }
+
+        const freshOrder = await prisma.order.findUnique({
           where: { id: existingOrder.id },
-          data: { status: status as OrderStatus },
           include: { items: true, vendor: true },
         });
 
-        // Notify client about status update
-        const statusLabel = status === 'EM_PREPARO' ? 'Em Preparo' : status === 'PRONTO' ? 'Pronto para Retirada' : status === 'RETIRADO' ? 'Entregue / Concluído' : 'Cancelado';
-        await prisma.notification.create({
-          data: {
-            userId: existingOrder.clientId,
-            title: `Pedido ${existingOrder.orderNumber} Atualizado`,
-            message: `Status atual: ${statusLabel} na barraca ${existingOrder.vendor.businessName}.`,
-            type: 'ORDER_STATUS',
-            orderId: existingOrder.id,
-          },
-        }).catch(() => {});
-
-        // Keep local store in sync
-        store.updateOrderStatus(params.id, status);
-
         return NextResponse.json({
-          ...updatedOrder,
-          vendorName: updatedOrder.vendor?.businessName,
+          ...freshOrder,
+          vendorName: freshOrder?.vendor?.businessName,
         });
       }
     } catch (dbErr) {
@@ -95,14 +151,29 @@ export async function PATCH(
     }
 
     // 2. Fallback to store
-    const updated = store.updateOrderStatus(params.id, status);
+    if (itemId && measuredWeight !== undefined) {
+      store.updateOrderItemWeight(params.id, itemId, Number(measuredWeight));
+    } else if (Array.isArray(items)) {
+      for (const it of items) {
+        if (it.id && it.measuredWeight !== undefined) {
+          store.updateOrderItemWeight(params.id, it.id, Number(it.measuredWeight));
+        }
+      }
+    }
+
+    if (status) {
+      store.updateOrderStatus(params.id, status);
+    }
+
+    const updated = store.getOrderById(params.id);
     if (!updated) {
       return NextResponse.json({ error: 'Pedido não encontrado.' }, { status: 404 });
     }
 
     return NextResponse.json(updated);
-  } catch {
-    return NextResponse.json({ error: 'Erro ao atualizar status do pedido.' }, { status: 500 });
+  } catch (err: any) {
+    console.error('Error in PATCH /api/orders/[id]:', err);
+    return NextResponse.json({ error: 'Erro ao atualizar pedido.' }, { status: 500 });
   }
 }
 

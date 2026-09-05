@@ -13,7 +13,8 @@ import {
   CheckCircle2, 
   Truck,
   Store,
-  QrCode
+  QrCode,
+  Scale
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -231,8 +232,16 @@ export default function ClientOrdersPage() {
                     Itens Reservados:
                   </span>
                   {order.items.map(item => (
-                    <div key={item.id} className="flex justify-between text-stone-700">
-                      <span>{item.quantity}x {item.productName}</span>
+                    <div key={item.id} className="flex justify-between items-start text-stone-700">
+                      <div>
+                        <span>{item.quantity}x {item.productName}</span>
+                        {item.measuredWeight != null && (
+                          <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5">
+                            <Scale className="w-2.5 h-2.5 shrink-0" />
+                            <span>Peso aferido na balança: <strong>{item.measuredWeight} kg</strong></span>
+                          </div>
+                        )}
+                      </div>
                       <span className="font-semibold text-stone-900">{formatCurrency(item.subtotal)}</span>
                     </div>
                   ))}

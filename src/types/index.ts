@@ -53,6 +53,7 @@ export interface Product {
   stock: number;
   imageUrl?: string;
   isOrganic: boolean;
+  isWeighable?: boolean;
   isActive: boolean;
 }
 
@@ -75,6 +76,7 @@ export interface OrderItem {
   productUnit: string;
   unitPrice: number;
   quantity: number;
+  measuredWeight?: number | null;
   subtotal: number;
 }
 

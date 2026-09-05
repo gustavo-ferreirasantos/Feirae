@@ -79,6 +79,7 @@ export async function POST(request: Request) {
             stock: Number(body.stock),
             imageUrl: body.imageUrl || null,
             isOrganic: Boolean(body.isOrganic),
+            isWeighable: Boolean(body.isWeighable),
             isActive: true,
           },
         });

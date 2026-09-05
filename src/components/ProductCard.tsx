@@ -3,7 +3,7 @@
 import React, { useState } from 'react';
 import Image from 'next/image';
 import Link from 'next/link';
-import { Plus, Check, Leaf, AlertCircle, Store, ShieldAlert } from 'lucide-react';
+import { Plus, Check, Leaf, AlertCircle, Store, ShieldAlert, Scale } from 'lucide-react';
 import { Product } from '@/types';
 import { formatCurrency } from '@/lib/utils';
 import { useCart } from '@/lib/cart-context';
@@ -59,11 +59,16 @@ export function ProductCard({ product }: { product: Product }) {
           </div>
         )}
 
-        {/* Category & Organic Badges */}
+        {/* Category, Organic & Weighable Badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
           {product.isOrganic && (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-xs">
               <Leaf className="w-3 h-3" /> Orgânico
+            </span>
+          )}
+          {product.isWeighable && (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-600 text-white shadow-xs">
+              <Scale className="w-3 h-3" /> Por Peso
             </span>
           )}
           <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-stone-900/70 text-white backdrop-blur-xs">
@@ -112,7 +117,9 @@ export function ProductCard({ product }: { product: Product }) {
         {/* Price & Action Button */}
         <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
           <div>
-            <span className="text-xs text-stone-400 block font-normal">Preço demonstrativo</span>
+            <span className="text-xs text-stone-400 block font-normal">
+              {product.isWeighable ? 'Preço por peso' : 'Preço demonstrativo'}
+            </span>
             <div className="flex items-baseline gap-1">
               <span className="text-base font-extrabold text-stone-900">
                 {formatCurrency(product.price)}
@@ -121,6 +128,11 @@ export function ProductCard({ product }: { product: Product }) {
                 /{product.unit}
               </span>
             </div>
+            {product.isWeighable && (
+              <span className="text-[10px] font-bold text-amber-700 block mt-0.5">
+                Preço aproximado • pesagem final na barraca
+              </span>
+            )}
           </div>
 
           <button

@@ -248,6 +248,7 @@ class MemoryStore {
         productUnit: product.unit,
         unitPrice: product.price,
         quantity: item.quantity,
+        measuredWeight: null,
         subtotal: subtotal,
       });
     }
@@ -360,6 +361,24 @@ class MemoryStore {
       type: 'ORDER_STATUS',
       orderId: order.id,
     });
+
+    return order;
+  }
+
+  updateOrderItemWeight(orderId: string, itemId: string, measuredWeight: number): Order | undefined {
+    const order = this.getOrderById(orderId);
+    if (!order) return undefined;
+
+    const item = order.items.find(it => it.id === itemId);
+    if (!item) return undefined;
+
+    item.measuredWeight = Number(measuredWeight);
+    item.subtotal = Number((item.unitPrice * Number(measuredWeight)).toFixed(2));
+
+    // Recalculate totalAmount
+    const itemsTotal = order.items.reduce((sum, it) => sum + (it.subtotal || it.unitPrice * it.quantity), 0);
+    const discount = order.discountAmount || 0;
+    order.totalAmount = Number(Math.max(0, itemsTotal - discount).toFixed(2));
 
     return order;
   }
@@ -627,6 +646,13 @@ if (process.env.NODE_ENV !== 'production') {
     INITIAL_ORDERS.forEach(initialOrder => {
       if (!globalStore.appStore!.orders.some(o => o.id === initialOrder.id)) {
         globalStore.appStore!.orders.push({ ...initialOrder });
+      }
+    });
+    // Sync product weighable flags
+    INITIAL_PRODUCTS.forEach(ip => {
+      const existing = globalStore.appStore!.products.find(p => p.id === ip.id);
+      if (existing && ip.isWeighable !== undefined) {
+        existing.isWeighable = ip.isWeighable;
       }
     });
   } else {

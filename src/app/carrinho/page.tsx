@@ -18,7 +18,8 @@ import {
   QrCode,
   Tag,
   CheckCircle2,
-  X
+  X,
+  Scale
 } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
@@ -270,14 +271,27 @@ export default function CartCheckoutPage() {
                 </div>
 
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-bold text-stone-900 truncate">
-                    {item.product.name}
-                  </h4>
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h4 className="text-sm font-bold text-stone-900 truncate">
+                      {item.product.name}
+                    </h4>
+                    {item.product.isWeighable && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                        <Scale className="w-3 h-3 text-amber-700" /> Vendido por peso
+                      </span>
+                    )}
+                  </div>
                   <div className="text-xs text-stone-500 mt-0.5">
                     {formatCurrency(item.product.price)} /{item.product.unit}
                   </div>
                   <div className="text-xs font-bold text-feira-700 mt-1">
-                    Subtotal: {formatCurrency(item.product.price * item.quantity)}
+                    {item.product.isWeighable ? 'Estimativa: ' : 'Subtotal: '}
+                    {formatCurrency(item.product.price * item.quantity)}
+                    {item.product.isWeighable && (
+                      <span className="text-[10px] font-medium text-amber-700 block mt-0.5">
+                        *Valor final ajustado após pesagem na balança na retirada
+                      </span>
+                    )}
                   </div>
                 </div>
 
@@ -319,6 +333,19 @@ export default function CartCheckoutPage() {
             <h3 className="font-extrabold text-stone-900 text-base pb-3 border-b border-stone-100">
               Detalhes da Retirada
             </h3>
+
+            {/* Weighable items notice if cart has any weighable item */}
+            {items.some(i => i.product.isWeighable) && (
+              <div className="p-3.5 rounded-2xl bg-amber-50/80 border border-amber-200 text-amber-950 text-xs flex items-start gap-2.5">
+                <Scale className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <div>
+                  <div className="font-bold text-[11px] text-amber-900">Preço aproximado em itens pesáveis</div>
+                  <p className="text-[11px] text-amber-800 mt-0.5 leading-relaxed">
+                    Seu pedido contém itens vendidos por peso. O valor total acima é estimado e será conferido na balança da barraca na hora da retirada.
+                  </p>
+                </div>
+              </div>
+            )}
 
             <div>
               <label className="text-xs font-bold text-stone-700 block mb-2 flex items-center gap-1.5">

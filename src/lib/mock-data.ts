@@ -135,6 +135,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 18,
     imageUrl: 'https://images.unsplash.com/photo-1592924357228-91a4daadcfea?auto=format&fit=crop&w=600&q=80',
     isOrganic: true,
+    isWeighable: true,
     isActive: true,
   },
   {
@@ -149,6 +150,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 12,
     imageUrl: 'https://images.unsplash.com/photo-1598170845058-32b9d6a5da37?auto=format&fit=crop&w=600&q=80',
     isOrganic: true,
+    isWeighable: true,
     isActive: true,
   },
   {
@@ -223,6 +225,7 @@ export const INITIAL_PRODUCTS: Product[] = [
     stock: 14,
     imageUrl: 'https://images.unsplash.com/photo-1486297678162-eb2a19b0a32d?auto=format&fit=crop&w=600&q=80',
     isOrganic: false,
+    isWeighable: true,
     isActive: true,
   },
   {
@@ -335,6 +338,7 @@ export const INITIAL_ORDERS: Order[] = [
         productUnit: 'kg',
         unitPrice: 8.90,
         quantity: 1,
+        measuredWeight: null,
         subtotal: 8.90,
       },
       {
@@ -345,6 +349,7 @@ export const INITIAL_ORDERS: Order[] = [
         productUnit: 'kg',
         unitPrice: 6.50,
         quantity: 1,
+        measuredWeight: null,
         subtotal: 6.50,
       }
     ],

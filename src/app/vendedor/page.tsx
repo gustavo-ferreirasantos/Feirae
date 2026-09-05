@@ -30,7 +30,8 @@ import {
   Wallet,
   CreditCard,
   Banknote,
-  RefreshCw
+  RefreshCw,
+  Scale
 } from 'lucide-react';
 import { Order, Product, Vendor, OrderStatus, PickupWindow, Review } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -110,6 +111,7 @@ export default function VendorDashboardPage() {
   const [formStock, setFormStock] = useState('20');
   const [formImage, setFormImage] = useState('');
   const [formOrganic, setFormOrganic] = useState(false);
+  const [formWeighable, setFormWeighable] = useState(false);
   const [savingProduct, setSavingProduct] = useState(false);
 
   // Bio & Barraca Modal State
@@ -381,6 +383,7 @@ export default function VendorDashboardPage() {
     setFormStock('20');
     setFormImage('https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80');
     setFormOrganic(false);
+    setFormWeighable(false);
     setShowProductModal(true);
   };
 
@@ -394,6 +397,7 @@ export default function VendorDashboardPage() {
     setFormStock(String(product.stock));
     setFormImage(product.imageUrl || '');
     setFormOrganic(product.isOrganic);
+    setFormWeighable(Boolean(product.isWeighable));
     setShowProductModal(true);
   };
 
@@ -411,6 +415,7 @@ export default function VendorDashboardPage() {
         stock: parseInt(formStock, 10),
         imageUrl: formImage,
         isOrganic: formOrganic,
+        isWeighable: formWeighable,
       };
 
       if (editingProduct) {
@@ -690,6 +695,26 @@ export default function VendorDashboardPage() {
                 />
                 <label htmlFor="isOrganic" className="font-semibold text-stone-700 cursor-pointer">
                   Produto 100% Orgânico / Sem Agrotóxicos
+                </label>
+              </div>
+
+              <div className="flex items-center gap-2 pt-0.5">
+                <input
+                  type="checkbox"
+                  id="isWeighable"
+                  checked={formWeighable}
+                  onChange={e => {
+                    const checked = e.target.checked;
+                    setFormWeighable(checked);
+                    if (checked && formUnit !== 'kg') {
+                      setFormUnit('kg');
+                    }
+                  }}
+                  className="w-4 h-4 text-amber-600 rounded focus:ring-amber-500"
+                />
+                <label htmlFor="isWeighable" className="font-semibold text-stone-700 cursor-pointer flex items-center gap-1.5">
+                  <Scale className="w-3.5 h-3.5 text-amber-600" />
+                  Vendido por peso / pesagem na retirada (balança)
                 </label>
               </div>
 
@@ -1301,6 +1326,10 @@ export default function VendorDashboardPage() {
         <OrderKanban
           orders={orders}
           onUpdateStatus={handleUpdateOrderStatus}
+          onOrderUpdated={(updated) => {
+            setOrders(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o));
+            fetchFinanceStats(financeDateFilter);
+          }}
         />
       )}
 
@@ -1462,7 +1491,15 @@ export default function VendorDashboardPage() {
                         )}
                       </div>
                       <div>
-                        <div className="font-bold text-stone-900">{p.name}</div>
+                        <div className="font-bold text-stone-900 flex items-center gap-1.5">
+                          {p.name}
+                          {p.isWeighable && (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 text-amber-800 flex items-center gap-0.5" title="Vendido por peso / aferição na retirada">
+                              <Scale className="w-2.5 h-2.5" />
+                              Pesável
+                            </span>
+                          )}
+                        </div>
                         <div className="text-[10px] text-stone-400 line-clamp-1">{p.description}</div>
                       </div>
                     </td>

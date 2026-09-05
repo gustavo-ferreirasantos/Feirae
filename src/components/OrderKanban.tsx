@@ -17,7 +17,9 @@ import {
   Ban,
   Eye,
   EyeOff,
-  MessageCircle
+  MessageCircle,
+  Scale,
+  CheckCircle2
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -26,11 +28,51 @@ import { getClientReadyNotifyLink } from '@/lib/whatsapp';
 interface OrderKanbanProps {
   orders: Order[];
   onUpdateStatus: (orderId: string, status: OrderStatus) => Promise<void>;
+  onOrderUpdated?: (order: Order) => void;
 }
 
-export function OrderKanban({ orders, onUpdateStatus }: OrderKanbanProps) {
+export function OrderKanban({ orders, onUpdateStatus, onOrderUpdated }: OrderKanbanProps) {
   const [loadingOrderId, setLoadingOrderId] = useState<string | null>(null);
   const [showCancelled, setShowCancelled] = useState(false);
+  const [itemWeights, setItemWeights] = useState<Record<string, string>>({});
+  const [savingWeightItemId, setSavingWeightItemId] = useState<string | null>(null);
+  const [weightSuccessId, setWeightSuccessId] = useState<string | null>(null);
+
+  const handleSaveWeight = async (orderId: string, itemId: string) => {
+    const weightStr = itemWeights[itemId];
+    const weightNum = parseFloat(weightStr);
+    if (isNaN(weightNum) || weightNum <= 0) {
+      alert('Por favor, digite um peso válido aferido na balança (ex: 0.850).');
+      return;
+    }
+
+    setSavingWeightItemId(itemId);
+    try {
+      const res = await fetch(`/api/orders/${orderId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itemId,
+          measuredWeight: weightNum,
+        }),
+      });
+
+      if (res.ok) {
+        const updatedOrder = await res.json();
+        if (onOrderUpdated) {
+          onOrderUpdated(updatedOrder);
+        }
+        setWeightSuccessId(itemId);
+        setTimeout(() => setWeightSuccessId(null), 3000);
+      } else {
+        alert('Erro ao atualizar o peso aferido.');
+      }
+    } catch (err) {
+      console.error('Erro ao salvar peso:', err);
+    } finally {
+      setSavingWeightItemId(null);
+    }
+  };
 
   const columns: Array<{
     status: OrderStatus;
@@ -205,20 +247,85 @@ export function OrderKanban({ orders, onUpdateStatus }: OrderKanbanProps) {
 
                       {/* Items Summary */}
                       {order.items && order.items.length > 0 && (
-                        <div className="text-[11px] text-stone-600 bg-stone-50 p-2.5 rounded-xl space-y-1 border border-stone-100">
-                          <div className="font-semibold text-[10px] uppercase tracking-wider text-stone-400 mb-1">
+                        <div className="text-[11px] text-stone-600 bg-stone-50 p-2.5 rounded-xl space-y-2 border border-stone-100">
+                          <div className="font-semibold text-[10px] uppercase tracking-wider text-stone-400">
                             Itens do Pedido:
                           </div>
-                          {order.items.map(item => (
-                            <div key={item.id} className="flex justify-between gap-1">
-                              <span className="truncate max-w-[160px]">
-                                {item.quantity}x {item.productName}
-                              </span>
-                              <span className="font-semibold text-stone-700 shrink-0">
-                                {formatCurrency(item.subtotal || item.unitPrice * item.quantity)}
-                              </span>
-                            </div>
-                          ))}
+                          {order.items.map(item => {
+                            const isWeighable = item.productUnit?.toLowerCase() === 'kg' || item.measuredWeight !== undefined;
+                            return (
+                              <div key={item.id} className="space-y-1 pt-1.5 border-t border-stone-200/60 first:border-0 first:pt-0">
+                                <div className="flex justify-between gap-1 items-start">
+                                  <span className="truncate max-w-[160px] font-medium text-stone-900">
+                                    {item.measuredWeight ? `${item.measuredWeight}kg` : `${item.quantity}x`} {item.productName}
+                                  </span>
+                                  <span className="font-bold text-stone-800 shrink-0">
+                                    {formatCurrency(item.subtotal || item.unitPrice * item.quantity)}
+                                  </span>
+                                </div>
+
+                                {isWeighable && (
+                                  <div className="bg-amber-50/90 rounded-xl p-2 border border-amber-200/80 space-y-1.5 mt-1">
+                                    <div className="flex items-center justify-between text-[10px]">
+                                      <span className="font-bold text-amber-950 flex items-center gap-1">
+                                        <Scale className="w-3 h-3 text-amber-700" />
+                                        Pesagem na Balança:
+                                      </span>
+                                      {item.measuredWeight ? (
+                                        <span className="font-bold text-emerald-800 bg-emerald-100/90 px-1.5 py-0.2 rounded text-[9px]">
+                                          ✓ {item.measuredWeight} kg aferido
+                                        </span>
+                                      ) : (
+                                        <span className="text-amber-700 font-semibold text-[9px]">
+                                          Pendente (est. {item.quantity} kg)
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {order.status?.toUpperCase() !== 'RETIRADO' && order.status?.toUpperCase() !== 'CANCELADO' && (
+                                      <div className="flex items-center gap-1.5 pt-0.5">
+                                        <div className="relative flex-1">
+                                          <input
+                                            type="number"
+                                            step="0.01"
+                                            min="0.01"
+                                            value={itemWeights[item.id] !== undefined ? itemWeights[item.id] : (item.measuredWeight ?? item.quantity)}
+                                            onChange={e => setItemWeights(prev => ({ ...prev, [item.id]: e.target.value }))}
+                                            placeholder="Peso real"
+                                            className="w-full px-2 py-1 bg-white border border-amber-300 rounded-lg text-xs font-bold text-stone-900 focus:outline-none focus:ring-1 focus:ring-amber-500 pr-7"
+                                          />
+                                          <span className="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-bold text-stone-400">
+                                            kg
+                                          </span>
+                                        </div>
+
+                                        <button
+                                          type="button"
+                                          onClick={() => handleSaveWeight(order.id, item.id)}
+                                          disabled={savingWeightItemId === item.id}
+                                          className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-lg text-[10px] transition shrink-0 cursor-pointer shadow-2xs flex items-center gap-1 disabled:opacity-50"
+                                          title="Gravar peso da balança e recalcular subtotal"
+                                        >
+                                          {savingWeightItemId === item.id ? (
+                                            <Loader2 className="w-3 h-3 animate-spin" />
+                                          ) : (
+                                            'Aferir'
+                                          )}
+                                        </button>
+                                      </div>
+                                    )}
+
+                                    {weightSuccessId === item.id && (
+                                      <div className="text-[10px] text-emerald-700 font-bold flex items-center gap-1 pt-0.5 animate-in fade-in">
+                                        <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                        Subtotal recalculado!
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
                       )}
 
