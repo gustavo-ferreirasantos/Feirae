@@ -92,6 +92,7 @@ model Vendor {
   pickupWindows  PickupWindow[]
   reviews        Review[]
   coupons        Coupon[]
+  fairLocations  VendorFairLocation[]
 }
 
 model Product {
@@ -121,11 +122,13 @@ model PickupWindow {
   dayOfWeek     String
   startTime     String
   endTime       String
-  location      String
-  maxOrders     Int      @default(30)
-  active        Boolean  @default(true)
+  location       String
+  fairLocationId String?
+  fairLocation   FairLocation? @relation(fields: [fairLocationId], references: [id])
+  maxOrders      Int      @default(30)
+  active         Boolean  @default(true)
 
-  orders        Order[]
+  orders         Order[]
 }
 
 model Order {
@@ -215,3 +218,35 @@ model Coupon {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
 }
+
+model FairLocation {
+  id            String               @id @default(cuid())
+  name          String
+  slug          String               @unique
+  address       String
+  city          String               @default("Petrolina - PE")
+  schedule      String
+  operatingDays String               @default("Sábado")
+  imageUrl      String?
+  active        Boolean              @default(true)
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
+
+  pickupWindows PickupWindow[]
+  vendors       VendorFairLocation[]
+}
+
+model VendorFairLocation {
+  id             String       @id @default(cuid())
+  vendorId       String
+  vendor         Vendor       @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  fairLocationId String
+  fairLocation   FairLocation @relation(fields: [fairLocationId], references: [id], onDelete: Cascade)
+  boothNumber    String?
+  assignedDays   String?
+  active         Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+
+  @@unique([vendorId, fairLocationId])
+}
+

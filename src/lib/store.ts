@@ -6,9 +6,11 @@ import {
   INITIAL_ORDERS, 
   INITIAL_REVIEWS, 
   INITIAL_NOTIFICATIONS,
-  INITIAL_COUPONS
+  INITIAL_COUPONS,
+  INITIAL_FAIRS,
+  INITIAL_VENDOR_FAIRS
 } from './mock-data';
-import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon, OrderStatus } from '@/types';
+import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon, OrderStatus, FairLocation, VendorFairLocation } from '@/types';
 
 // In-memory persistent state (shared across API routes during server lifecycle)
 class MemoryStore {
@@ -20,6 +22,8 @@ class MemoryStore {
   reviews: Review[] = [...INITIAL_REVIEWS];
   notifications: Notification[] = [...INITIAL_NOTIFICATIONS];
   coupons: Coupon[] = [...INITIAL_COUPONS];
+  fairs: FairLocation[] = [...INITIAL_FAIRS];
+  vendorFairs: VendorFairLocation[] = [...INITIAL_VENDOR_FAIRS];
 
   getCoupons(vendorId?: string): Coupon[] {
     return this.coupons.filter(c => {
@@ -128,9 +132,78 @@ class MemoryStore {
     return this.updateVendor(vendorId, updates);
   }
 
-  getProducts(vendorId?: string, category?: string, search?: string): Product[] {
+  getFairs(): FairLocation[] {
+    return this.fairs
+      .filter(f => f.active)
+      .map(f => {
+        const vendorCount = new Set(
+          this.vendorFairs
+            .filter(vf => vf.fairLocationId === f.id && vf.active)
+            .map(vf => vf.vendorId)
+        ).size;
+        return { ...f, vendorCount };
+      });
+  }
+
+  getFairById(id: string): FairLocation | undefined {
+    return this.fairs.find(f => f.id === id || f.slug === id);
+  }
+
+  getVendorFairs(vendorId: string): (VendorFairLocation & { fairLocation?: FairLocation })[] {
+    return this.vendorFairs
+      .filter(vf => vf.vendorId === vendorId && vf.active)
+      .map(vf => ({
+        ...vf,
+        fairLocation: this.fairs.find(f => f.id === vf.fairLocationId),
+      }));
+  }
+
+  setVendorFairs(
+    vendorId: string, 
+    fairAssignments: Array<{ fairLocationId: string; boothNumber?: string; assignedDays?: string }>
+  ): (VendorFairLocation & { fairLocation?: FairLocation })[] {
+    this.vendorFairs = this.vendorFairs.filter(vf => vf.vendorId !== vendorId);
+
+    fairAssignments.forEach((fa, idx) => {
+      this.vendorFairs.push({
+        id: `vf-${vendorId}-${fa.fairLocationId}-${Date.now()}-${idx}`,
+        vendorId,
+        fairLocationId: fa.fairLocationId,
+        boothNumber: fa.boothNumber || undefined,
+        assignedDays: fa.assignedDays || undefined,
+        active: true,
+      });
+    });
+
+    return this.getVendorFairs(vendorId);
+  }
+
+  getVendorsByFair(fairId?: string): Vendor[] {
+    if (!fairId || fairId === 'ALL') {
+      return this.getVendors();
+    }
+    const fair = this.getFairById(fairId);
+    if (!fair) return this.getVendors();
+
+    const vendorIds = new Set(
+      this.vendorFairs
+        .filter(vf => (vf.fairLocationId === fair.id || vf.fairLocationId === fair.slug) && vf.active)
+        .map(vf => vf.vendorId)
+    );
+
+    return this.vendors.filter(v => v.active && (vendorIds.has(v.id) || v.fairLocation?.toLowerCase().includes(fair.slug) || v.fairLocation?.includes(fair.name)));
+  }
+
+  getProducts(vendorId?: string, category?: string, search?: string, fairId?: string): Product[] {
+    let allowedVendorIds: Set<string> | null = null;
+    if (fairId && fairId !== 'ALL') {
+      const fairVendors = this.getVendorsByFair(fairId);
+      allowedVendorIds = new Set(fairVendors.map(v => v.id));
+    }
+
     return this.products.filter(p => {
       if (!p.isActive) return false;
+      if (allowedVendorIds && !allowedVendorIds.has(p.vendorId)) return false;
       if (vendorId) {
         if (p.vendorId !== vendorId) return false;
       } else {
@@ -191,6 +264,22 @@ class MemoryStore {
 
   getPickupWindows(vendorId: string): PickupWindow[] {
     return this.pickupWindows.filter(pw => pw.vendorId === vendorId && pw.active);
+  }
+
+  addPickupWindow(windowData: Omit<PickupWindow, 'id' | 'createdAt'>): PickupWindow {
+    const newWindow: PickupWindow = {
+      ...windowData,
+      id: `win-${Date.now()}`,
+    };
+    this.pickupWindows.push(newWindow);
+    return newWindow;
+  }
+
+  deletePickupWindow(windowId: string): boolean {
+    const win = this.pickupWindows.find(w => w.id === windowId);
+    if (!win) return false;
+    win.active = false;
+    return true;
   }
 
   getOrders(params?: { clientId?: string; vendorId?: string }): Order[] {
@@ -702,6 +791,13 @@ if (process.env.NODE_ENV !== 'production') {
         existing.vendorReplyAt = ir.vendorReplyAt;
       }
     });
+    // Sync fairs and vendorFairs
+    if (!globalStore.appStore!.fairs || globalStore.appStore!.fairs.length === 0) {
+      globalStore.appStore!.fairs = [...INITIAL_FAIRS];
+    }
+    if (!globalStore.appStore!.vendorFairs || globalStore.appStore!.vendorFairs.length === 0) {
+      globalStore.appStore!.vendorFairs = [...INITIAL_VENDOR_FAIRS];
+    }
   } else {
     globalStore.appStore = store;
   }

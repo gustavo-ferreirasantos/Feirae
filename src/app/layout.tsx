@@ -4,6 +4,7 @@ import "./globals.css";
 import { Navbar } from "@/components/Navbar";
 import { CartProvider } from "@/lib/cart-context";
 import { UserProvider } from "@/lib/user-context";
+import { FairProvider } from "@/lib/fair-context";
 
 const inter = Inter({ subsets: ["latin"] });
 
@@ -21,11 +22,12 @@ export default function RootLayout({
     <html lang="pt-BR" className="h-full">
       <body className={`${inter.className} min-h-full flex flex-col bg-stone-50 text-stone-900`}>
         <UserProvider>
-          <CartProvider>
-            <Navbar />
-            <main className="flex-1">
-              {children}
-            </main>
+          <FairProvider>
+            <CartProvider>
+              <Navbar />
+              <main className="flex-1">
+                {children}
+              </main>
             <footer className="bg-white border-t border-stone-200 mt-16 py-8 text-xs text-stone-500">
               <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
@@ -37,7 +39,8 @@ export default function RootLayout({
               </div>
             </footer>
           </CartProvider>
-        </UserProvider>
+        </FairProvider>
+      </UserProvider>
       </body>
     </html>
   );

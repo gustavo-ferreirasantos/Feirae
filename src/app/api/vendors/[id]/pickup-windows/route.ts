@@ -12,6 +12,9 @@ export async function GET(
         vendorId: params.id,
         active: true,
       },
+      include: {
+        fairLocation: true,
+      },
     });
     if (windows && windows.length > 0) {
       return NextResponse.json(windows);
@@ -30,21 +33,40 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const { dayOfWeek, startTime, endTime, location, maxOrders } = body;
+    const { dayOfWeek, startTime, endTime, location, maxOrders, fairLocationId } = body;
 
-    const created = await prisma.pickupWindow.create({
-      data: {
+    try {
+      const created = await prisma.pickupWindow.create({
+        data: {
+          vendorId: params.id,
+          dayOfWeek: dayOfWeek || 'Sábado',
+          startTime: startTime || '08:00',
+          endTime: endTime || '12:00',
+          location: location || 'Praça da Feira Livre',
+          maxOrders: Number(maxOrders) || 30,
+          fairLocationId: fairLocationId || null,
+          active: true,
+        },
+        include: {
+          fairLocation: true,
+        },
+      });
+
+      return NextResponse.json(created, { status: 201 });
+    } catch (prismaErr) {
+      console.warn('Prisma create pickup window fallback:', prismaErr);
+      const createdMock = store.addPickupWindow({
         vendorId: params.id,
         dayOfWeek: dayOfWeek || 'Sábado',
         startTime: startTime || '08:00',
         endTime: endTime || '12:00',
         location: location || 'Praça da Feira Livre',
         maxOrders: Number(maxOrders) || 30,
+        fairLocationId: fairLocationId || undefined,
         active: true,
-      },
-    });
-
-    return NextResponse.json(created, { status: 201 });
+      });
+      return NextResponse.json(createdMock, { status: 201 });
+    }
   } catch (err) {
     return NextResponse.json({ error: 'Erro ao cadastrar janela de retirada.' }, { status: 500 });
   }
@@ -61,10 +83,15 @@ export async function DELETE(
       return NextResponse.json({ error: 'ID da janela obrigatório.' }, { status: 400 });
     }
 
-    await prisma.pickupWindow.update({
-      where: { id: windowId },
-      data: { active: false },
-    });
+    try {
+      await prisma.pickupWindow.update({
+        where: { id: windowId },
+        data: { active: false },
+      });
+    } catch (prismaErr) {
+      console.warn('Prisma delete pickup window fallback:', prismaErr);
+      store.deletePickupWindow(windowId);
+    }
 
     return NextResponse.json({ success: true });
   } catch {

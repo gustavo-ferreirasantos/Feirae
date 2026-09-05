@@ -1,4 +1,4 @@
-import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon } from '@/types';
+import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon, FairLocation, VendorFairLocation } from '@/types';
 
 export const INITIAL_USERS: User[] = [
   {
@@ -262,6 +262,7 @@ export const INITIAL_PICKUP_WINDOWS: PickupWindow[] = [
   {
     id: 'pw-1',
     vendorId: 'vendor-1',
+    fairLocationId: 'fair-1',
     dayOfWeek: 'Sábado',
     startTime: '07:30',
     endTime: '09:30',
@@ -272,6 +273,7 @@ export const INITIAL_PICKUP_WINDOWS: PickupWindow[] = [
   {
     id: 'pw-2',
     vendorId: 'vendor-1',
+    fairLocationId: 'fair-1',
     dayOfWeek: 'Sábado',
     startTime: '09:30',
     endTime: '11:30',
@@ -280,8 +282,20 @@ export const INITIAL_PICKUP_WINDOWS: PickupWindow[] = [
     active: true,
   },
   {
+    id: 'pw-1b',
+    vendorId: 'vendor-1',
+    fairLocationId: 'fair-2',
+    dayOfWeek: 'Quarta-feira',
+    startTime: '16:00',
+    endTime: '18:30',
+    location: 'Barraca 08 - Feira do Bairro Novo',
+    maxOrders: 25,
+    active: true,
+  },
+  {
     id: 'pw-3',
     vendorId: 'vendor-2',
+    fairLocationId: 'fair-1',
     dayOfWeek: 'Sábado',
     startTime: '08:00',
     endTime: '10:00',
@@ -292,11 +306,23 @@ export const INITIAL_PICKUP_WINDOWS: PickupWindow[] = [
   {
     id: 'pw-4',
     vendorId: 'vendor-3',
+    fairLocationId: 'fair-1',
     dayOfWeek: 'Sábado',
     startTime: '08:00',
     endTime: '11:00',
     location: 'Barraca 22 - Praça da Matriz',
     maxOrders: 25,
+    active: true,
+  },
+  {
+    id: 'pw-4b',
+    vendorId: 'vendor-3',
+    fairLocationId: 'fair-3',
+    dayOfWeek: 'Domingo',
+    startTime: '07:30',
+    endTime: '11:30',
+    location: 'Barraca 03 - Parque Josepha Coelho',
+    maxOrders: 20,
     active: true,
   },
 ];
@@ -780,3 +806,86 @@ export const INITIAL_COUPONS: Coupon[] = [
     createdAt: new Date().toISOString(),
   },
 ];
+
+export const INITIAL_FAIRS: FairLocation[] = [
+  {
+    id: 'fair-1',
+    name: 'Feira Livre da Praça da Matriz',
+    slug: 'praca-da-matriz',
+    address: 'Praça da Matriz, Centro Histórico',
+    city: 'Petrolina - PE',
+    schedule: 'Sábados, 06:30 às 12:30',
+    operatingDays: 'Sábado',
+    imageUrl: 'https://images.unsplash.com/photo-1488459716781-31db52582fe9?auto=format&fit=crop&w=600&q=80',
+    active: true,
+  },
+  {
+    id: 'fair-2',
+    name: 'Feira Livre do Bairro Novo',
+    slug: 'bairro-novo',
+    address: 'Av. das Nações, em frente ao Mercado Comunitário',
+    city: 'Petrolina - PE',
+    schedule: 'Quartas-feiras, 15:00 às 20:30',
+    operatingDays: 'Quarta-feira',
+    imageUrl: 'https://images.unsplash.com/photo-1542838132-92c53300491e?auto=format&fit=crop&w=600&q=80',
+    active: true,
+  },
+  {
+    id: 'fair-3',
+    name: 'Feira Agroecológica do Parque',
+    slug: 'agroecologica-parque',
+    address: 'Parque Municipal Josepha Coelho',
+    city: 'Petrolina - PE',
+    schedule: 'Domingos, 07:00 às 12:00',
+    operatingDays: 'Domingo',
+    imageUrl: 'https://images.unsplash.com/photo-1516253593875-bd7ba052fbc5?auto=format&fit=crop&w=600&q=80',
+    active: true,
+  },
+];
+
+export const INITIAL_VENDOR_FAIRS: VendorFairLocation[] = [
+  // Vendor 1 (Zé dos Orgânicos) - Praça da Matriz (Sábado) & Bairro Novo (Quarta)
+  {
+    id: 'vf-1',
+    vendorId: 'vendor-1',
+    fairLocationId: 'fair-1',
+    boothNumber: 'Barraca 14',
+    assignedDays: 'Sábado',
+    active: true,
+  },
+  {
+    id: 'vf-2',
+    vendorId: 'vendor-1',
+    fairLocationId: 'fair-2',
+    boothNumber: 'Barraca 08',
+    assignedDays: 'Quarta-feira',
+    active: true,
+  },
+  // Vendor 2 (Dona Neusa) - Praça da Matriz (Sábado)
+  {
+    id: 'vf-3',
+    vendorId: 'vendor-2',
+    fairLocationId: 'fair-1',
+    boothNumber: 'Barraca 08',
+    assignedDays: 'Sábado',
+    active: true,
+  },
+  // Vendor 3 (Queijaria Canastra) - Praça da Matriz (Sábado) & Parque (Domingo)
+  {
+    id: 'vf-4',
+    vendorId: 'vendor-3',
+    fairLocationId: 'fair-1',
+    boothNumber: 'Barraca 22',
+    assignedDays: 'Sábado',
+    active: true,
+  },
+  {
+    id: 'vf-5',
+    vendorId: 'vendor-3',
+    fairLocationId: 'fair-3',
+    boothNumber: 'Barraca 03',
+    assignedDays: 'Domingo',
+    active: true,
+  },
+];
+

@@ -17,6 +17,31 @@ export interface User {
 
 export type VendorPlan = 'FREE' | 'PRO';
 
+export interface FairLocation {
+  id: string;
+  name: string;
+  slug: string;
+  address: string;
+  city: string;
+  schedule: string;
+  operatingDays: string | string[];
+  imageUrl?: string;
+  active: boolean;
+  vendorCount?: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface VendorFairLocation {
+  id: string;
+  vendorId: string;
+  fairLocationId: string;
+  fairLocation?: FairLocation;
+  boothNumber?: string;
+  assignedDays?: string;
+  active: boolean;
+}
+
 export interface Vendor {
   id: string;
   userId: string;
@@ -39,6 +64,7 @@ export interface Vendor {
   featuredUntil?: string | null;
   featuredOrder?: number;
   active: boolean;
+  fairLocations?: VendorFairLocation[];
 }
 
 export interface Product {
@@ -64,6 +90,8 @@ export interface PickupWindow {
   startTime: string;
   endTime: string;
   location: string;
+  fairLocationId?: string;
+  fairLocation?: FairLocation;
   maxOrders: number;
   active: boolean;
 }

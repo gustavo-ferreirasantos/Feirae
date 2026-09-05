@@ -34,7 +34,7 @@ import {
   Scale,
   Send
 } from 'lucide-react';
-import { Order, Product, Vendor, OrderStatus, PickupWindow, Review } from '@/types';
+import { Order, Product, Vendor, OrderStatus, PickupWindow, Review, FairLocation, VendorFairLocation } from '@/types';
 import { useUser } from '@/lib/user-context';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import { OrderKanban } from '@/components/OrderKanban';
@@ -125,6 +125,14 @@ export default function VendorDashboardPage() {
   const [savingBio, setSavingBio] = useState(false);
   const [bioSuccessFeedback, setBioSuccessFeedback] = useState<string | null>(null);
 
+  // Fair Location Management State (US23)
+  const [fairs, setFairs] = useState<FairLocation[]>([]);
+  const [vendorFairs, setVendorFairs] = useState<VendorFairLocation[]>([]);
+  const [showFairModal, setShowFairModal] = useState(false);
+  const [assignedFairsMap, setAssignedFairsMap] = useState<Record<string, { active: boolean; boothNumber: string; assignedDays: string }>>({});
+  const [savingFairs, setSavingFairs] = useState(false);
+  const [fairFeedback, setFairFeedback] = useState<string | null>(null);
+
   // Pickup Window Modal State
   const [showWindowModal, setShowWindowModal] = useState(false);
   const [winDay, setWinDay] = useState('Sábado');
@@ -132,6 +140,7 @@ export default function VendorDashboardPage() {
   const [winEnd, setWinEnd] = useState('11:30');
   const [winLoc, setWinLoc] = useState('');
   const [winMax, setWinMax] = useState('30');
+  const [winFairId, setWinFairId] = useState('');
   const [savingWindow, setSavingWindow] = useState(false);
 
   // Plan Toggle State
@@ -168,16 +177,32 @@ export default function VendorDashboardPage() {
       return;
     }
     try {
-      const [ordRes, prodRes, winRes, revRes] = await Promise.all([
+      const [ordRes, prodRes, winRes, revRes, fairsRes, vfRes] = await Promise.all([
         fetch('/api/orders?vendorId=' + activeVendorId),
         fetch('/api/products?vendorId=' + activeVendorId),
         fetch(`/api/vendors/${activeVendorId}/pickup-windows`),
         fetch(`/api/reviews?vendorId=${activeVendorId}`),
+        fetch('/api/fairs'),
+        fetch(`/api/vendors/${activeVendorId}/fairs`),
       ]);
       if (ordRes.ok) setOrders(await ordRes.json());
       if (prodRes.ok) setProducts(await prodRes.json());
       if (winRes.ok) setPickupWindows(await winRes.json());
       if (revRes.ok) setReviews(await revRes.json());
+      if (fairsRes.ok) setFairs(await fairsRes.json());
+      if (vfRes.ok) {
+        const vfData = await vfRes.json();
+        setVendorFairs(vfData);
+        const map: Record<string, { active: boolean; boothNumber: string; assignedDays: string }> = {};
+        vfData.forEach((vf: VendorFairLocation) => {
+          map[vf.fairLocationId] = {
+            active: vf.active !== false,
+            boothNumber: vf.boothNumber || '',
+            assignedDays: vf.assignedDays || '',
+          };
+        });
+        setAssignedFairsMap(map);
+      }
     } catch (err) {
       console.error(err);
     } finally {
@@ -494,6 +519,74 @@ export default function VendorDashboardPage() {
     }
   };
 
+  const handleOpenFairModal = () => {
+    const nextMap = { ...assignedFairsMap };
+    fairs.forEach(f => {
+      if (!nextMap[f.id]) {
+        const matchesCurrent = vendorFairs.some(vf => vf.fairLocationId === f.id && vf.active) ||
+          currentVendor?.fairLocation?.toLowerCase().includes(f.slug) ||
+          (f.id === 'fair-1' && (currentVendor?.fairLocation?.toLowerCase().includes('matriz') || !currentVendor?.fairLocation));
+
+        nextMap[f.id] = {
+          active: !!matchesCurrent,
+          boothNumber: currentVendor?.boothNumber || '',
+          assignedDays: (Array.isArray(f.operatingDays) ? f.operatingDays.join(', ') : f.operatingDays) || '',
+        };
+      }
+    });
+    setAssignedFairsMap(nextMap);
+    setShowFairModal(true);
+  };
+
+  const handleSaveVendorFairs = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setSavingFairs(true);
+    try {
+      const fairAssignments = Object.entries(assignedFairsMap)
+        .filter(([_, val]) => val.active)
+        .map(([fairLocationId, val]) => ({
+          fairLocationId,
+          boothNumber: val.boothNumber,
+          assignedDays: val.assignedDays,
+        }));
+
+      const res = await fetch(`/api/vendors/${activeVendorId}/fairs`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fairAssignments }),
+      });
+
+      if (res.ok) {
+        const updated = await res.json();
+        setVendorFairs(updated);
+        setShowFairModal(false);
+        setFairFeedback('Feiras e praças de atendimento salvas com sucesso!');
+        setTimeout(() => setFairFeedback(null), 5000);
+      } else {
+        alert('Erro ao salvar as feiras de atendimento.');
+      }
+    } catch (err) {
+      console.error('Erro ao vincular feiras:', err);
+      alert('Erro de conexão ao salvar feiras.');
+    } finally {
+      setSavingFairs(false);
+    }
+  };
+
+  const handleSelectFairInWindow = (fairId: string) => {
+    setWinFairId(fairId);
+    if (!fairId) return;
+    const fair = fairs.find(f => f.id === fairId);
+    if (fair) {
+      if (fair.operatingDays) {
+        setWinDay(Array.isArray(fair.operatingDays) ? fair.operatingDays[0] : fair.operatingDays);
+      }
+      const vf = vendorFairs.find(v => v.fairLocationId === fairId);
+      const booth = vf?.boothNumber || currentVendor?.boothNumber || '';
+      setWinLoc(`${fair.name}${booth ? ` (Barraca #${booth})` : ''}`);
+    }
+  };
+
   const handleSaveWindow = async (e: React.FormEvent) => {
     e.preventDefault();
     setSavingWindow(true);
@@ -504,6 +597,7 @@ export default function VendorDashboardPage() {
         endTime: winEnd,
         location: winLoc,
         maxOrders: parseInt(winMax, 10),
+        fairLocationId: winFairId || null,
       };
 
       const res = await fetch(`/api/vendors/${activeVendorId}/pickup-windows`, {
@@ -514,6 +608,7 @@ export default function VendorDashboardPage() {
 
       if (res.ok) {
         setShowWindowModal(false);
+        setWinFairId('');
         loadVendorData();
       }
     } catch (err) {
@@ -923,6 +1018,23 @@ export default function VendorDashboardPage() {
 
             <form onSubmit={handleSaveWindow} className="p-6 space-y-4 text-xs">
               <div>
+                <label className="font-semibold text-stone-700 block mb-1">Vincular a qual Feira / Praça? (Opcional)</label>
+                <select
+                  value={winFairId}
+                  onChange={e => handleSelectFairInWindow(e.target.value)}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-semibold text-stone-800"
+                >
+                  <option value="">Selecione a praça ou feira...</option>
+                  {fairs.map(f => (
+                    <option key={f.id} value={f.id}>
+                      {f.name} ({Array.isArray(f.operatingDays) ? f.operatingDays.join(', ') : f.operatingDays})
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-stone-400 mt-1">Ao escolher a feira, o dia e ponto são preenchidos automaticamente.</p>
+              </div>
+
+              <div>
                 <label className="font-semibold text-stone-700 block mb-1">Dia da Semana</label>
                 <select
                   value={winDay}
@@ -1001,6 +1113,144 @@ export default function VendorDashboardPage() {
                   className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-70 cursor-pointer"
                 >
                   {savingWindow ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salvar Horário'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Gerenciar Múltiplas Feiras de Atuação (US23) */}
+      {showFairModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <MapPin className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Minhas Feiras & Praças de Atuação</h3>
+                  <p className="text-[11px] text-stone-500">Marque as praças onde você vende e informe o número da sua barraca</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFairModal(false)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveVendorFairs} className="p-6 space-y-4 text-xs">
+              <div className="space-y-3 max-h-[420px] overflow-y-auto pr-1">
+                {fairs.map(fair => {
+                  const currentAssignment = assignedFairsMap[fair.id] || { active: false, boothNumber: '', assignedDays: '' };
+                  const isChecked = currentAssignment.active;
+
+                  return (
+                    <div
+                      key={fair.id}
+                      className={`p-4 rounded-2xl border transition ${
+                        isChecked
+                          ? 'border-amber-400/90 bg-amber-50/40 shadow-xs'
+                          : 'border-stone-200 bg-stone-50/60'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <label className="flex items-start gap-3 cursor-pointer flex-1">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={e => {
+                              const checked = e.target.checked;
+                              setAssignedFairsMap(prev => ({
+                                ...prev,
+                                [fair.id]: {
+                                  active: checked,
+                                  boothNumber: prev[fair.id]?.boothNumber || currentVendor?.boothNumber || '',
+                                  assignedDays: prev[fair.id]?.assignedDays || (Array.isArray(fair.operatingDays) ? fair.operatingDays.join(', ') : fair.operatingDays),
+                                }
+                              }));
+                            }}
+                            className="w-4 h-4 rounded text-amber-600 focus:ring-amber-500 mt-0.5"
+                          />
+                          <div>
+                            <div className="font-bold text-stone-900 text-sm">{fair.name}</div>
+                            <div className="text-[11px] text-stone-500">{fair.address}, {fair.city}</div>
+                            <div className="text-[10px] text-amber-800 font-semibold mt-0.5">
+                              📅 {Array.isArray(fair.operatingDays) ? fair.operatingDays.join(', ') : fair.operatingDays} • ⏰ {fair.schedule}
+                            </div>
+                          </div>
+                        </label>
+                      </div>
+
+                      {isChecked && (
+                        <div className="mt-3 pt-3 border-t border-amber-200/70 grid grid-cols-2 gap-3 animate-in fade-in">
+                          <div>
+                            <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                              Número da Barraca
+                            </label>
+                            <input
+                              type="text"
+                              value={currentAssignment.boothNumber}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setAssignedFairsMap(prev => ({
+                                  ...prev,
+                                  [fair.id]: {
+                                    ...prev[fair.id],
+                                    boothNumber: val,
+                                  }
+                                }));
+                              }}
+                              placeholder="Ex: Barraca #14"
+                              className="w-full px-3 py-1.5 bg-white border border-stone-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                            />
+                          </div>
+
+                          <div>
+                            <label className="text-[11px] font-semibold text-stone-700 block mb-1">
+                              Dias de Atendimento
+                            </label>
+                            <input
+                              type="text"
+                              value={currentAssignment.assignedDays || (Array.isArray(fair.operatingDays) ? fair.operatingDays.join(', ') : fair.operatingDays)}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setAssignedFairsMap(prev => ({
+                                  ...prev,
+                                  [fair.id]: {
+                                    ...prev[fair.id],
+                                    assignedDays: val,
+                                  }
+                                }));
+                              }}
+                              placeholder="Ex: Sábados"
+                              className="w-full px-3 py-1.5 bg-white border border-stone-200 rounded-xl focus:ring-2 focus:ring-amber-500 focus:outline-none text-xs"
+                            />
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="pt-3 border-t border-stone-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowFairModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingFairs}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-70 cursor-pointer"
+                >
+                  {savingFairs ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Salvar Vínculo de Feiras'}
                 </button>
               </div>
             </form>
@@ -1379,6 +1629,7 @@ export default function VendorDashboardPage() {
       {activeTab === 'KANBAN' && (
         <OrderKanban
           orders={orders}
+          fairs={fairs}
           onUpdateStatus={handleUpdateOrderStatus}
           onOrderUpdated={(updated) => {
             setOrders(prev => prev.map(o => o.id === updated.id ? { ...o, ...updated } : o));
@@ -1603,56 +1854,154 @@ export default function VendorDashboardPage() {
         </div>
       )}
 
-      {/* Tab 4: PICKUP WINDOWS */}
+      {/* Tab 4: PICKUP WINDOWS & MULTIPLE FAIRS (US23) */}
       {activeTab === 'WINDOWS' && (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-lg font-bold text-stone-900">Dias e Horários de Retirada na Feira</h2>
-              <p className="text-xs text-stone-500">Configure as janelas em que seus clientes podem retirar os pedidos na sua barraca</p>
+        <div className="space-y-6">
+          {fairFeedback && (
+            <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{fairFeedback}</span>
             </div>
-            <button
-              onClick={() => setShowWindowModal(true)}
-              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-            >
-              <Plus className="w-3.5 h-3.5" /> Nova Janela de Horário
-            </button>
+          )}
+
+          {/* Section 1: Minhas Feiras e Praças de Atuação (US23) */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center gap-2">
+                  <h3 className="font-extrabold text-stone-900 text-lg">
+                    Feiras & Praças de Atuação
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-teal-100 text-teal-800 uppercase tracking-wider">
+                    Múltiplas Feiras (US23)
+                  </span>
+                </div>
+                <p className="text-xs text-stone-500 mt-0.5">
+                  Vincule os bairros, praças e dias da semana em que sua barraca física funciona
+                </p>
+              </div>
+
+              <button
+                onClick={handleOpenFairModal}
+                className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-xs transition cursor-pointer self-start sm:self-auto"
+              >
+                <MapPin className="w-4 h-4" />
+                <span>Gerenciar Minhas Feiras ({vendorFairs.filter(vf => vf.active).length || 1})</span>
+              </button>
+            </div>
+
+            {/* Fairs Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {fairs.map(fair => {
+                const vf = vendorFairs.find(v => (v.fairLocationId === fair.id || v.fairLocationId === fair.slug) && v.active);
+                const isAssigned = !!vf || (currentVendor?.fairLocation?.toLowerCase().includes(fair.slug) && vendorFairs.length === 0);
+
+                return (
+                  <div
+                    key={fair.id}
+                    className={`p-4 rounded-2xl border transition flex flex-col justify-between space-y-3 ${
+                      isAssigned
+                        ? 'bg-gradient-to-br from-amber-50/60 to-stone-50/40 border-amber-300/80 shadow-xs'
+                        : 'bg-stone-50/50 border-stone-200/80 opacity-70'
+                    }`}
+                  >
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold uppercase tracking-wider ${
+                          isAssigned
+                            ? 'bg-amber-400 text-stone-950 shadow-2xs'
+                            : 'bg-stone-200 text-stone-600'
+                        }`}>
+                          {isAssigned ? 'Ativo nesta Feira' : 'Não Atua'}
+                        </span>
+                        {isAssigned && (
+                          <span className="text-[11px] font-bold text-stone-700 bg-white/90 border border-stone-200 px-2 py-0.5 rounded-md">
+                            {vf?.boothNumber || currentVendor?.boothNumber || 'Barraca Padrão'}
+                          </span>
+                        )}
+                      </div>
+
+                      <h4 className="font-bold text-sm text-stone-900">{fair.name}</h4>
+                      <p className="text-[11px] text-stone-500">{fair.address}, {fair.city}</p>
+                      
+                      <div className="text-[11px] text-stone-600 font-medium pt-1">
+                        📅 {vf?.assignedDays || (Array.isArray(fair.operatingDays) ? fair.operatingDays.join(', ') : fair.operatingDays)} • {fair.schedule}
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-200/60 flex items-center justify-between text-[11px]">
+                      <span className="text-stone-400">Janelas ativas:</span>
+                      <span className="font-bold text-stone-700">
+                        {pickupWindows.filter(pw => pw.fairLocationId === fair.id || (pw.location || '').toLowerCase().includes(fair.slug)).length} horários
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-            {pickupWindows.map(win => (
-              <div key={win.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between space-y-3">
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-xs">
-                      {win.dayOfWeek}
-                    </span>
-                    <button
-                      onClick={() => handleDeleteWindow(win.id)}
-                      className="p-1 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
-                      title="Excluir janela"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-
-                  <div className="text-base font-extrabold text-stone-900 flex items-center gap-1.5">
-                    <Clock className="w-4 h-4 text-amber-600" />
-                    {win.startTime} às {win.endTime}
-                  </div>
-
-                  <div className="text-xs text-stone-500 flex items-start gap-1.5">
-                    <MapPin className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-0.5" />
-                    <span>{win.location}</span>
-                  </div>
-                </div>
-
-                <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400 font-medium">
-                  <span>Capacidade máxima:</span>
-                  <span className="font-bold text-stone-700">{win.maxOrders} pré-pedidos</span>
-                </div>
+          {/* Section 2: Dias e Horários de Retirada */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-lg font-bold text-stone-900">Janelas de Horário de Retirada</h2>
+                <p className="text-xs text-stone-500">Configure as janelas em que seus clientes podem retirar os pedidos na sua barraca</p>
               </div>
-            ))}
+              <button
+                onClick={() => setShowWindowModal(true)}
+                className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" /> Nova Janela de Horário
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {pickupWindows.map(win => {
+                const fairObj = fairs.find(f => f.id === win.fairLocationId);
+
+                return (
+                  <div key={win.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex flex-col justify-between space-y-3">
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2.5 py-0.5 rounded-full bg-amber-100 text-amber-800 font-extrabold text-xs">
+                            {win.dayOfWeek}
+                          </span>
+                          {fairObj && (
+                            <span className="px-2 py-0.5 rounded-full bg-teal-100 text-teal-800 font-bold text-[10px]">
+                              {fairObj.name.replace('Feira Livre ', '').replace('Feira da ', '')}
+                            </span>
+                          )}
+                        </div>
+                        <button
+                          onClick={() => handleDeleteWindow(win.id)}
+                          className="p-1 text-stone-400 hover:text-red-600 rounded-lg hover:bg-red-50 cursor-pointer"
+                          title="Excluir janela"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+
+                      <div className="text-base font-extrabold text-stone-900 flex items-center gap-1.5">
+                        <Clock className="w-4 h-4 text-amber-600" />
+                        {win.startTime} às {win.endTime}
+                      </div>
+
+                      <div className="text-xs text-stone-500 flex items-start gap-1.5">
+                        <MapPin className="w-3.5 h-3.5 text-stone-400 shrink-0 mt-0.5" />
+                        <span>{win.location}</span>
+                      </div>
+                    </div>
+
+                    <div className="pt-2 border-t border-stone-100 flex items-center justify-between text-[11px] text-stone-400 font-medium">
+                      <span>Capacidade máxima:</span>
+                      <span className="font-bold text-stone-700">{win.maxOrders} pré-pedidos</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         </div>
       )}

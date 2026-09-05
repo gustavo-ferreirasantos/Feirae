@@ -18,6 +18,7 @@ import {
 import { Product, Vendor } from '@/types';
 import { ProductCard } from '@/components/ProductCard';
 import { VendorCard } from '@/components/VendorCard';
+import { useFair } from '@/lib/fair-context';
 
 const CATEGORIES = [
   'Todos',
@@ -58,11 +59,35 @@ export default function HomePage() {
     loadData();
   }, []);
 
-  const activeVendorIds = new Set(vendors.map(v => v.id));
+  const { selectedFairId, selectedFair } = useFair();
+
+  const filteredVendors = vendors.filter(v => {
+    if (!v.active) return false;
+    if (selectedFairId === 'ALL' || !selectedFair) return true;
+
+    // Check if vendor has matching fair location relation
+    const matchesFairRelation = v.fairLocations?.some(
+      vf => (vf.fairLocationId === selectedFair.id || vf.fairLocationId === selectedFair.slug) && vf.active
+    );
+    if (matchesFairRelation) return true;
+
+    // Fallback match on fairLocation text
+    const locLower = (v.fairLocation || '').toLowerCase();
+    if (selectedFair.id === 'fair-1' && (locLower.includes('matriz') || locLower.includes('centro'))) return true;
+    if (selectedFair.id === 'fair-2' && locLower.includes('bairro novo')) return true;
+    if (selectedFair.id === 'fair-3' && (locLower.includes('parque') || locLower.includes('agroecol'))) return true;
+
+    return false;
+  });
+
+  const filteredFeaturedVendors = featuredVendors.filter(v => {
+    return filteredVendors.some(fv => fv.id === v.id);
+  });
+
+  const activeFilteredVendorIds = new Set(filteredVendors.map(v => v.id));
 
   const filteredProducts = products.filter(p => {
-    // Apenas exibir produtos se a barraca estiver na lista de feirantes ativos
-    if (vendors.length > 0 && !activeVendorIds.has(p.vendorId)) return false;
+    if (vendors.length > 0 && !activeFilteredVendorIds.has(p.vendorId)) return false;
     const matchCategory = selectedCategory === 'Todos' || p.category.toLowerCase().includes(selectedCategory.toLowerCase());
     const query = searchQuery.toLowerCase();
     const matchSearch = !searchQuery || 
@@ -131,6 +156,40 @@ export default function HomePage() {
         </div>
       </section>
 
+      {/* Active Fair Filter Indicator Banner */}
+      {selectedFair && (
+        <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="bg-gradient-to-r from-emerald-50 via-feira-50 to-teal-50 border border-emerald-200/80 rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-600 text-white flex items-center justify-center shrink-0 shadow-xs">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-emerald-200/80 text-emerald-900">
+                    Feira Selecionada
+                  </span>
+                  <span className="text-xs text-stone-500 font-medium">
+                    {Array.isArray(selectedFair.operatingDays) ? selectedFair.operatingDays.join(', ') : selectedFair.operatingDays}
+                  </span>
+                </div>
+                <h3 className="text-sm sm:text-base font-bold text-stone-900">
+                  {selectedFair.name} — <span className="font-normal text-stone-600">{selectedFair.address}, {selectedFair.city}</span>
+                </h3>
+                <p className="text-xs text-emerald-800 font-medium mt-0.5">
+                  Horário: {selectedFair.schedule}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 self-end sm:self-center">
+              <span className="text-xs font-semibold text-stone-600 bg-white/80 border border-stone-200 px-2.5 py-1 rounded-lg">
+                {filteredVendors.length} {filteredVendors.length === 1 ? 'barraca ativa' : 'barracas ativas'}
+              </span>
+            </div>
+          </div>
+        </section>
+      )}
+
       {/* Categories Filter Bar */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex items-center justify-between mb-4">
@@ -166,7 +225,7 @@ export default function HomePage() {
       </section>
 
       {/* Top Section: Sponsored / Featured Vendors (US19) */}
-      {featuredVendors.length > 0 && (
+      {filteredFeaturedVendors.length > 0 && (
         <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="bg-gradient-to-br from-amber-50/70 via-stone-50/50 to-emerald-50/40 border border-amber-300/80 rounded-3xl p-6 sm:p-8 shadow-xs space-y-6">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -199,7 +258,7 @@ export default function HomePage() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-              {featuredVendors.map(vendor => (
+              {filteredFeaturedVendors.map(vendor => (
                 <VendorCard key={vendor.id} vendor={vendor} />
               ))}
             </div>
@@ -218,12 +277,12 @@ export default function HomePage() {
             href="/feirantes"
             className="text-xs font-bold text-feira-700 hover:text-feira-900 flex items-center gap-1"
           >
-            Ver todos ({vendors.length}) <ChevronRight className="w-4 h-4" />
+            Ver todos ({filteredVendors.length}) <ChevronRight className="w-4 h-4" />
           </Link>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-          {vendors.slice(0, 3).map(vendor => (
+          {filteredVendors.slice(0, 3).map(vendor => (
             <VendorCard key={vendor.id} vendor={vendor} />
           ))}
         </div>
