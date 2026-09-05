@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'next/navigation';
-import { Store, MapPin, Calendar, Clock, Star, MessageSquare, ArrowLeft, AlertCircle, MessageCircle, Award } from 'lucide-react';
+import { Store, MapPin, Calendar, Clock, Star, MessageSquare, ArrowLeft, AlertCircle, MessageCircle, Award, CheckCircle2 } from 'lucide-react';
 import Link from 'next/link';
 import { Vendor, Product, PickupWindow, Review } from '@/types';
 import { ProductCard } from '@/components/ProductCard';
@@ -238,6 +238,30 @@ export default function VendorProfilePage() {
                   <p className="text-xs text-stone-600 leading-relaxed pl-10">
                     "{rev.comment}"
                   </p>
+                )}
+
+                {rev.vendorReply && (
+                  <div className="ml-6 sm:ml-10 mt-3 p-3.5 rounded-2xl bg-emerald-50/70 border border-emerald-200/80 space-y-1.5 animate-in fade-in">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5">
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-600 text-white flex items-center gap-1 shadow-xs">
+                          <CheckCircle2 className="w-3 h-3" />
+                          Resposta do Feirante
+                        </span>
+                        <span className="text-xs font-bold text-stone-800">
+                          {vendor.businessName}
+                        </span>
+                      </div>
+                      {rev.vendorReplyAt && (
+                        <span className="text-[10px] text-stone-400">
+                          {formatDate(rev.vendorReplyAt)}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-stone-700 leading-relaxed pl-0.5">
+                      {rev.vendorReply}
+                    </p>
+                  </div>
                 )}
               </div>
             ))

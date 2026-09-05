@@ -181,9 +181,11 @@ model Review {
   clientId   String
   client     User     @relation(fields: [clientId], references: [id])
   clientName String
-  rating     Int
-  comment    String?
-  createdAt  DateTime @default(now())
+  rating        Int
+  comment       String?
+  vendorReply   String?
+  vendorReplyAt DateTime?
+  createdAt     DateTime  @default(now())
 }
 
 model Notification {

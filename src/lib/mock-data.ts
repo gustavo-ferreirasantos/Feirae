@@ -431,6 +431,8 @@ export const INITIAL_ORDERS: Order[] = [
       clientName: 'Maria Oliveira',
       rating: 5,
       comment: 'O pão estava maravilhoso e a geleia super fresca! Retirada muito rápida na barraca.',
+      vendorReply: 'Muito obrigada, Maria! Preparamos tudo com muito amor na véspera da feira. Te esperamos no próximo sábado!',
+      vendorReplyAt: new Date(Date.now() - 3600000 * 36).toISOString(),
       createdAt: new Date(Date.now() - 3600000 * 40).toISOString(),
     }
   },
@@ -682,6 +684,8 @@ export const INITIAL_REVIEWS: Review[] = [
     clientName: 'Maria Oliveira',
     rating: 5,
     comment: 'O pão estava maravilhoso e a geleia super fresca! Retirada muito rápida na barraca.',
+    vendorReply: 'Muito obrigada, Maria! Preparamos tudo com muito amor na véspera da feira. Te esperamos no próximo sábado!',
+    vendorReplyAt: new Date(Date.now() - 3600000 * 36).toISOString(),
     createdAt: new Date(Date.now() - 3600000 * 40).toISOString(),
   },
   {

@@ -298,9 +298,19 @@ export default function ClientOrdersPage() {
 
                   {order.status === 'RETIRADO' && (
                     order.review ? (
-                      <div className="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 px-3 py-1.5 rounded-xl">
-                        <span className="font-semibold text-stone-700">Sua avaliação:</span>
-                        <StarRating rating={order.review.rating} size="sm" />
+                      <div className="space-y-1.5">
+                        <div className="flex items-center gap-1.5 text-xs text-stone-600 bg-stone-50 px-3 py-1.5 rounded-xl">
+                          <span className="font-semibold text-stone-700">Sua avaliação:</span>
+                          <StarRating rating={order.review.rating} size="sm" />
+                        </div>
+                        {order.review.vendorReply && (
+                          <div className="text-[11px] bg-emerald-50 text-emerald-950 border border-emerald-200/80 rounded-xl p-2.5 space-y-1 animate-in fade-in">
+                            <span className="font-bold flex items-center gap-1 text-emerald-800">
+                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Resposta do Feirante:
+                            </span>
+                            <p className="italic text-stone-700 leading-relaxed">"{order.review.vendorReply}"</p>
+                          </div>
+                        )}
                       </div>
                     ) : (
                       <button

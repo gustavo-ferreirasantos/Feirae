@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Bell, CheckCheck, Package, AlertCircle } from 'lucide-react';
+import { Bell, CheckCheck, Package, AlertCircle, MessageSquare } from 'lucide-react';
 import { useUser } from '@/lib/user-context';
 import { Notification } from '@/types';
 import { formatDate } from '@/lib/utils';
@@ -97,7 +97,9 @@ export function NotificationBell() {
                   >
                     <div className="flex items-start gap-2.5">
                       <div className="mt-0.5 p-1.5 rounded-lg bg-feira-100 text-feira-800 shrink-0">
-                        {notif.type === 'ORDER_CANCELLED' ? (
+                        {notif.type === 'REVIEW_REPLY' ? (
+                          <MessageSquare className="w-3.5 h-3.5 text-emerald-700" />
+                        ) : notif.type === 'ORDER_CANCELLED' ? (
                           <AlertCircle className="w-3.5 h-3.5 text-amber-600" />
                         ) : (
                           <Package className="w-3.5 h-3.5 text-feira-700" />

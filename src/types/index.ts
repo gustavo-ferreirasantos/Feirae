@@ -131,6 +131,8 @@ export interface Review {
   clientName: string;
   rating: number;
   comment?: string;
+  vendorReply?: string | null;
+  vendorReplyAt?: string | null;
   createdAt: string;
 }
 
@@ -139,7 +141,7 @@ export interface Notification {
   userId: string;
   title: string;
   message: string;
-  type: 'ORDER_STATUS' | 'NEW_ORDER' | 'ORDER_CANCELLED' | 'SYSTEM';
+  type: 'ORDER_STATUS' | 'NEW_ORDER' | 'ORDER_CANCELLED' | 'REVIEW_REPLY' | 'SYSTEM';
   orderId?: string;
   read: boolean;
   createdAt: string;

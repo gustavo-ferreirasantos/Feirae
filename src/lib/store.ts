@@ -453,6 +453,43 @@ class MemoryStore {
     return this.reviews;
   }
 
+  replyToReview(reviewId: string, replyText: string): Review | { error: string } {
+    const review = this.reviews.find(r => r.id === reviewId);
+    if (!review) {
+      return { error: 'Avaliação não encontrada.' };
+    }
+
+    const trimmed = replyText.trim();
+    if (!trimmed) {
+      return { error: 'A resposta não pode ser vazia.' };
+    }
+
+    review.vendorReply = trimmed;
+    review.vendorReplyAt = new Date().toISOString();
+
+    // Also sync with the order's review if attached
+    const order = this.orders.find(o => o.id === review.orderId);
+    if (order && order.review) {
+      order.review.vendorReply = trimmed;
+      order.review.vendorReplyAt = review.vendorReplyAt;
+    }
+
+    // Trigger notification to the client
+    const vendor = this.getVendorById(review.vendorId);
+    const vendorName = vendor?.businessName || 'O feirante';
+    const preview = trimmed.length > 80 ? `${trimmed.slice(0, 80)}...` : trimmed;
+
+    this.addNotification({
+      userId: review.clientId,
+      title: 'Sua avaliação foi respondida!',
+      message: `${vendorName} respondeu ao seu comentário: "${preview}"`,
+      type: 'REVIEW_REPLY',
+      orderId: review.orderId,
+    });
+
+    return review;
+  }
+
   getNotifications(userId: string): Notification[] {
     return this.notifications.filter(n => n.userId === userId);
   }
@@ -653,6 +690,16 @@ if (process.env.NODE_ENV !== 'production') {
       const existing = globalStore.appStore!.products.find(p => p.id === ip.id);
       if (existing && ip.isWeighable !== undefined) {
         existing.isWeighable = ip.isWeighable;
+      }
+    });
+    // Sync initial reviews
+    INITIAL_REVIEWS.forEach(ir => {
+      const existing = globalStore.appStore!.reviews.find(r => r.id === ir.id);
+      if (!existing) {
+        globalStore.appStore!.reviews.push({ ...ir });
+      } else if (ir.vendorReply && !existing.vendorReply) {
+        existing.vendorReply = ir.vendorReply;
+        existing.vendorReplyAt = ir.vendorReplyAt;
       }
     });
   } else {
