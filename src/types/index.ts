@@ -242,6 +242,8 @@ export interface AdminStats {
   totalOrders: number;
   totalGMV: number;
   subscribersCount: number;
+  simulatedCommissionTotal?: number;
+  subscriptionTotal?: number;
   featuredVendorsCount: number;
   sponsorshipRevenue: number;
   totalMonetizationEstimate: number;

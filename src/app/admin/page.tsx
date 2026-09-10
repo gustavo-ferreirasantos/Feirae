@@ -33,7 +33,16 @@ import {
   Award,
   Filter,
   Check,
-  HelpCircle
+  HelpCircle,
+  Sliders,
+  Calculator,
+  Target,
+  Coins,
+  DollarSign,
+  PieChart,
+  RefreshCcw,
+  Scale,
+  Compass
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
@@ -42,13 +51,19 @@ import { PeriodFilter } from '@/types';
 
 export default function AdminDashboardPage() {
   const { currentUser } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'VENDORS' | 'PRODUCTS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
+
+  // Simulator State (US26)
+  const [simulatedGMV, setSimulatedGMV] = useState<number>(30000);
+  const [simulatedCommissionRate, setSimulatedCommissionRate] = useState<number>(0);
+  const [simulatedProCount, setSimulatedProCount] = useState<number>(15);
+  const proMonthlyPrice = 49.90;
 
   // Filters
   const [vendorSearch, setVendorSearch] = useState('');
@@ -701,6 +716,455 @@ export default function AdminDashboardPage() {
     );
   };
 
+  const renderMonetizationSimulator = () => {
+    // Instant calculations (US26)
+    const commissionRevenue = (simulatedGMV * simulatedCommissionRate) / 100;
+    const proSubscriptionRevenue = simulatedProCount * proMonthlyPrice;
+    const projectedTotalRevenue = commissionRevenue + proSubscriptionRevenue;
+    const projectedTakeRate = simulatedGMV > 0 ? (projectedTotalRevenue / simulatedGMV) * 100 : 0;
+
+    // Real platform data from stats
+    const realGMV = stats?.totalGMV || 0;
+    const realRevenue = stats?.totalMonetizationEstimate || ((stats?.subscribersCount || 0) * 49.9 + ((stats?.featuredVendorsCount || 0) * 29.9));
+    const realOrders = stats?.totalOrders || 0;
+    const realTicketMedio = realOrders > 0 ? (realGMV / realOrders) : 38.5;
+    const projectedOrdersCount = realTicketMedio > 0 ? Math.round(simulatedGMV / realTicketMedio) : Math.round(simulatedGMV / 40);
+    const realTakeRate = realGMV > 0 ? (realRevenue / realGMV) * 100 : 0;
+
+    // Progress & Comparison
+    const revenueGoalAchievement = projectedTotalRevenue > 0 
+      ? Math.min(250, Math.round((realRevenue / projectedTotalRevenue) * 100)) 
+      : 0;
+    const revenueGap = projectedTotalRevenue - realRevenue;
+
+    const applyPreset = (gmv: number, commission: number, pro: number) => {
+      setSimulatedGMV(gmv);
+      setSimulatedCommissionRate(commission);
+      setSimulatedProCount(pro);
+    };
+
+    return (
+      <div className="space-y-6">
+        {/* Banner */}
+        <div className="bg-gradient-to-r from-emerald-900 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
+                <Sliders className="w-3.5 h-3.5 text-emerald-300" />
+                Simulador Financeiro • US26
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>Projeções de GMV e Receita</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                Simulador de Monetização & Projeção de GMV
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                Varie o volume transacionado (GMV), comissão e feirantes assinantes Pro para modelar cenários de negócio, estimar receita líquida da plataforma e acompanhar o Take Rate.
+              </p>
+            </div>
+
+            <button
+              onClick={() => applyPreset(30000, 0, 15)}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-emerald-100 border border-emerald-400/30 text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 self-start md:self-auto"
+            >
+              <RefreshCcw className="w-3.5 h-3.5" />
+              Restaurar Padrão
+            </button>
+          </div>
+        </div>
+
+        {/* Quick Presets Bar */}
+        <div className="bg-white rounded-2xl border border-stone-200 p-4 shadow-xs flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex items-center gap-2 text-stone-500 text-xs font-bold shrink-0">
+            <Compass className="w-4 h-4 text-emerald-600" />
+            <span>Cenários Pré-configurados:</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => applyPreset(25000, 0, 15)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                simulatedCommissionRate === 0 && simulatedProCount === 15 && simulatedGMV === 25000
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+            >
+              Feirae Atual (0% + 15 Pro)
+            </button>
+            <button
+              onClick={() => applyPreset(45000, 2.5, 25)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                simulatedCommissionRate === 2.5 && simulatedProCount === 25 && simulatedGMV === 45000
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+            >
+              Modelo Híbrido (2.5% + 25 Pro)
+            </button>
+            <button
+              onClick={() => applyPreset(60000, 8, 0)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                simulatedCommissionRate === 8 && simulatedProCount === 0 && simulatedGMV === 60000
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+            >
+              Marketplace Tradicional (8% comissão)
+            </button>
+            <button
+              onClick={() => applyPreset(120000, 1, 50)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer border ${
+                simulatedCommissionRate === 1 && simulatedProCount === 50 && simulatedGMV === 120000
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
+              }`}
+            >
+              Expansão Regional (1% + 50 Pro)
+            </button>
+          </div>
+        </div>
+
+        {/* Main Grid: Controls + Real-Time Results */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          
+          {/* Controls Column (7 cols) */}
+          <div className="lg:col-span-7 bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs space-y-6">
+            <div className="border-b border-stone-100 pb-3.5 flex items-center justify-between">
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md inline-block mb-1">
+                  Parâmetros de Entrada
+                </span>
+                <h3 className="font-extrabold text-stone-900 text-base">
+                  Ajuste os Sliders de Simulação
+                </h3>
+              </div>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Sliders className="w-4 h-4" />
+              </div>
+            </div>
+
+            {/* Slider 1: GMV Mensal */}
+            <div className="space-y-2.5 p-4 rounded-2xl bg-stone-50/80 border border-stone-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <label className="text-xs font-extrabold text-stone-900 flex items-center gap-1.5">
+                    <Coins className="w-4 h-4 text-emerald-600" />
+                    GMV Mensal Estimado (Volume Transacionado)
+                  </label>
+                  <span className="text-[11px] text-stone-500 block">
+                    Valor total de produtos vendidos pelos feirantes no mês
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xl sm:text-2xl font-black text-emerald-700 block">
+                    {formatCurrency(simulatedGMV)}
+                  </span>
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min="1000"
+                max="200000"
+                step="1000"
+                value={simulatedGMV}
+                onChange={(e) => setSimulatedGMV(Number(e.target.value))}
+                className="w-full h-2.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-emerald-600"
+              />
+
+              <div className="flex justify-between text-[10px] font-semibold text-stone-400 pt-0.5">
+                <span>R$ 1.000</span>
+                <span>R$ 50.000</span>
+                <span>R$ 100.000</span>
+                <span>R$ 150.000</span>
+                <span>R$ 200.000</span>
+              </div>
+            </div>
+
+            {/* Slider 2: Taxa de Comissão (0% a 15%) */}
+            <div className="space-y-2.5 p-4 rounded-2xl bg-stone-50/80 border border-stone-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <label className="text-xs font-extrabold text-stone-900 flex items-center gap-1.5">
+                    <Scale className="w-4 h-4 text-purple-600" />
+                    Taxa de Comissão da Plataforma (0% a 15%)
+                  </label>
+                  <span className="text-[11px] text-stone-500 block">
+                    {simulatedCommissionRate === 0 
+                      ? '0% • Modelo Feirae (zero comissão sobre a colheita do produtor)'
+                      : `${simulatedCommissionRate}% retido sobre cada pedido gerado`}
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xl sm:text-2xl font-black text-purple-700 block">
+                    {simulatedCommissionRate.toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min="0"
+                max="15"
+                step="0.5"
+                value={simulatedCommissionRate}
+                onChange={(e) => setSimulatedCommissionRate(Number(e.target.value))}
+                className="w-full h-2.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-purple-600"
+              />
+
+              <div className="flex justify-between text-[10px] font-semibold text-stone-400 pt-0.5">
+                <span className="text-emerald-700 font-bold">0% (Isento)</span>
+                <span>3.5%</span>
+                <span>7.5%</span>
+                <span>11.0%</span>
+                <span className="text-red-700 font-bold">15% (Máx)</span>
+              </div>
+            </div>
+
+            {/* Slider 3: Quantidade de Feirantes Pro */}
+            <div className="space-y-2.5 p-4 rounded-2xl bg-stone-50/80 border border-stone-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <label className="text-xs font-extrabold text-stone-900 flex items-center gap-1.5">
+                    <Award className="w-4 h-4 text-amber-600" />
+                    Quantidade de Feirantes Assinantes Pro
+                  </label>
+                  <span className="text-[11px] text-stone-500 block">
+                    Assinatura recorrente mensal fixa de R$ 49,90 por barraca
+                  </span>
+                </div>
+                <div className="text-right">
+                  <span className="text-xl sm:text-2xl font-black text-amber-700 block">
+                    {simulatedProCount} <span className="text-xs font-bold text-stone-500">feirantes</span>
+                  </span>
+                </div>
+              </div>
+
+              <input
+                type="range"
+                min="0"
+                max="100"
+                step="1"
+                value={simulatedProCount}
+                onChange={(e) => setSimulatedProCount(Number(e.target.value))}
+                className="w-full h-2.5 bg-stone-200 rounded-lg appearance-none cursor-pointer accent-amber-600"
+              />
+
+              <div className="flex justify-between text-[10px] font-semibold text-stone-400 pt-0.5">
+                <span>0</span>
+                <span>25 feirantes</span>
+                <span>50 feirantes</span>
+                <span>75 feirantes</span>
+                <span>100 feirantes</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Instant Results Column (5 cols) */}
+          <div className="lg:col-span-5 space-y-4">
+            
+            {/* Projected Revenue Hero Card */}
+            <div className="bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-800 text-white rounded-3xl p-6 shadow-sm space-y-4">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-200 uppercase tracking-wider">
+                  Receita Mensal Projetada
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full bg-white/20 text-white text-[11px] font-black">
+                  Take Rate: {projectedTakeRate.toFixed(1)}%
+                </span>
+              </div>
+
+              <div>
+                <span className="text-3xl sm:text-4xl font-black tracking-tight block">
+                  {formatCurrency(projectedTotalRevenue)}
+                </span>
+                <span className="text-xs text-emerald-100/90 font-medium block mt-1">
+                  Projeção líquida de faturamento mensal da plataforma
+                </span>
+              </div>
+
+              <div className="pt-3 border-t border-white/15 space-y-2 text-xs">
+                <div className="flex justify-between font-semibold">
+                  <span className="text-emerald-100">Receita de Comissões ({simulatedCommissionRate}%):</span>
+                  <span className="font-bold">{formatCurrency(commissionRevenue)}</span>
+                </div>
+                <div className="flex justify-between font-semibold">
+                  <span className="text-emerald-100">Receita de Assinaturas Pro ({simulatedProCount} x R$ 49,90):</span>
+                  <span className="font-bold">{formatCurrency(proSubscriptionRevenue)}</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Platform Metrics Cards (Ticket Médio & Take Rate) */}
+            <div className="grid grid-cols-2 gap-3.5">
+              <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs space-y-1">
+                <span className="text-[11px] font-bold text-stone-400 block uppercase">Ticket Médio</span>
+                <span className="text-xl font-black text-stone-900 block">
+                  {formatCurrency(realTicketMedio)}
+                </span>
+                <span className="text-[10px] text-stone-500 block">
+                  Por pedido na feira
+                </span>
+              </div>
+
+              <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs space-y-1">
+                <span className="text-[11px] font-bold text-stone-400 block uppercase">Pedidos Estimados</span>
+                <span className="text-xl font-black text-blue-700 block">
+                  ~{projectedOrdersCount.toLocaleString('pt-BR')}
+                </span>
+                <span className="text-[10px] text-stone-500 block">
+                  Para atingir o GMV
+                </span>
+              </div>
+            </div>
+
+            <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs space-y-2">
+              <div className="flex items-center justify-between text-xs font-bold text-stone-800">
+                <span className="flex items-center gap-1.5">
+                  <Target className="w-3.5 h-3.5 text-purple-600" />
+                  Take Rate Efetivo da Plataforma:
+                </span>
+                <span className="text-purple-700 font-black text-sm">{projectedTakeRate.toFixed(1)}%</span>
+              </div>
+              <p className="text-[11px] text-stone-500 leading-relaxed">
+                O Take Rate representa a porcentagem do GMV total transacionado na feira que se converte em faturamento para o Feirae.
+              </p>
+            </div>
+
+          </div>
+
+        </div>
+
+        {/* 3. Side-by-side Comparative Visual (Real vs Projected Goal) */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 mb-1">
+                <BarChart3 className="w-3.5 h-3.5" />
+                Comparativo de Faturamento: Real vs Meta Projetada
+              </div>
+              <h3 className="font-black text-stone-900 text-lg">
+                Faturamento Real Acumulado vs Meta Projetada
+              </h3>
+              <p className="text-xs text-stone-500">
+                Acompanhe o grau de realização financeira da feira livre em relação às metas simuladas.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className={`px-3 py-1 rounded-xl text-xs font-bold ${
+                realRevenue >= projectedTotalRevenue
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}>
+                {revenueGoalAchievement}% da Meta Mensal
+              </div>
+            </div>
+          </div>
+
+          {/* Side-by-Side Comparison Columns */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+            
+            {/* Real Platform Accumulation */}
+            <div className="p-5 rounded-2xl bg-stone-50 border border-stone-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-stone-600">
+                  Faturamento Real Acumulado
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-stone-200 text-stone-800 text-[10px] font-bold">
+                  Dado Real
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl sm:text-3xl font-black text-stone-900 block">
+                  {formatCurrency(realRevenue)}
+                </span>
+                <span className="text-xs text-stone-500 font-semibold block mt-0.5">
+                  Receita real gerada (Assinaturas + Patrocínios)
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-stone-200/80 text-xs text-stone-700">
+                <div className="flex justify-between">
+                  <span>GMV Real Movimentado:</span>
+                  <span className="font-bold text-stone-900">{formatCurrency(realGMV)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pedidos Reais Concluídos:</span>
+                  <span className="font-bold text-stone-900">{realOrders} pedido(s)</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Take Rate Real Efetivo:</span>
+                  <span className="font-bold text-stone-900">{realTakeRate.toFixed(1)}%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Projected Goal */}
+            <div className="p-5 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-800">
+                  Meta Mensal Simulada
+                </span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-200 text-emerald-900 text-[10px] font-bold">
+                  Projeção
+                </span>
+              </div>
+              <div>
+                <span className="text-2xl sm:text-3xl font-black text-emerald-800 block">
+                  {formatCurrency(projectedTotalRevenue)}
+                </span>
+                <span className="text-xs text-emerald-700 font-semibold block mt-0.5">
+                  Meta mensal projetada no simulador
+                </span>
+              </div>
+              <div className="space-y-1.5 pt-2 border-t border-emerald-200 text-xs text-emerald-900">
+                <div className="flex justify-between">
+                  <span>GMV Projetado:</span>
+                  <span className="font-bold">{formatCurrency(simulatedGMV)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Pedidos Projetados:</span>
+                  <span className="font-bold">~{projectedOrdersCount} pedidos</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Take Rate Projetado:</span>
+                  <span className="font-bold">{projectedTakeRate.toFixed(1)}%</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+
+          {/* Goal Progress Bar & Gap Analysis */}
+          <div className="space-y-2 p-4 rounded-2xl bg-stone-50 border border-stone-200/80">
+            <div className="flex items-center justify-between text-xs font-bold text-stone-800">
+              <span>Progresso de Faturamento em Relação à Meta</span>
+              <span className="text-emerald-700 font-extrabold">{revenueGoalAchievement}%</span>
+            </div>
+            <div className="w-full bg-stone-200 h-3.5 rounded-full overflow-hidden relative">
+              <div 
+                className="h-full bg-gradient-to-r from-emerald-500 to-teal-600 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, revenueGoalAchievement)}%` }}
+              />
+            </div>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between text-[11px] text-stone-500 pt-1 gap-1">
+              <span>Faturamento Real: {formatCurrency(realRevenue)}</span>
+              {realRevenue >= projectedTotalRevenue ? (
+                <span className="font-bold text-emerald-700">
+                  🎉 Meta Mensal Atingida / Superada por {formatCurrency(realRevenue - projectedTotalRevenue)}!
+                </span>
+              ) : (
+                <span className="font-bold text-amber-700">
+                  Faltam {formatCurrency(revenueGap)} para alcançar a meta projetada.
+                </span>
+              )}
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       
@@ -803,6 +1267,21 @@ export default function AdminDashboardPage() {
           Métricas de Produto (AARRR)
           <span className="px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 text-[10px] font-extrabold">
             US25
+          </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('SIMULATOR')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'SIMULATOR'
+              ? 'border-emerald-600 text-emerald-900'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Sliders className="w-4 h-4 text-emerald-600" />
+          Simulador & GMV
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+            US26
           </span>
         </button>
 
@@ -979,6 +1458,9 @@ export default function AdminDashboardPage() {
           {/* Section: Product Analytics (AARRR) & Funnel */}
           {renderProductAnalytics()}
 
+          {/* Section: Monetization Simulator & GMV Projections (US26) */}
+          {renderMonetizationSimulator()}
+
         </div>
       )}
 
@@ -986,6 +1468,13 @@ export default function AdminDashboardPage() {
       {activeTab === 'AARRR' && (
         <div className="space-y-8 animate-in fade-in">
           {renderProductAnalytics()}
+        </div>
+      )}
+
+      {/* ================= TAB 3: SIMULADOR DE MONETIZAÇÃO & GMV (US26) ================= */}
+      {activeTab === 'SIMULATOR' && (
+        <div className="space-y-8 animate-in fade-in">
+          {renderMonetizationSimulator()}
         </div>
       )}
 

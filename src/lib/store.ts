@@ -624,9 +624,11 @@ class MemoryStore {
     // Calculate simulated commissions & sponsorships
     let simulatedCommissionTotal = 0;
     let subscriptionTotal = 0;
+    let subscribersCount = 0;
 
     this.vendors.forEach(v => {
       if (v.isSubscriber) {
+        subscribersCount += 1;
         subscriptionTotal += 49.90; // R$ 49,90/mês simulado
       } else {
         const vendorOrders = periodOrders.filter(
@@ -757,6 +759,7 @@ class MemoryStore {
       totalProducts,
       totalOrders,
       totalGMV: Math.round(totalVolume * 100) / 100,
+      subscribersCount,
       simulatedCommissionTotal: Math.round(simulatedCommissionTotal * 100) / 100,
       subscriptionTotal: Math.round(subscriptionTotal * 100) / 100,
       featuredVendorsCount,
