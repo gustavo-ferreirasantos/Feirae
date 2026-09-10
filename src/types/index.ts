@@ -42,6 +42,8 @@ export interface VendorFairLocation {
   active: boolean;
 }
 
+export type CertStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export interface Vendor {
   id: string;
   userId: string;
@@ -63,6 +65,14 @@ export interface Vendor {
   isFeatured?: boolean;
   featuredUntil?: string | null;
   featuredOrder?: number;
+  isCertifiedOrganic?: boolean;
+  certificationDocUrl?: string | null;
+  certStatus?: CertStatus;
+  certRegistrationNumber?: string | null;
+  certIssuingBody?: string | null;
+  certSubmittedAt?: string | null;
+  certReviewedAt?: string | null;
+  certRejectionReason?: string | null;
   active: boolean;
   fairLocations?: VendorFairLocation[];
 }

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { Store, Search, MapPin } from 'lucide-react';
+import { Store, Search, MapPin, Leaf } from 'lucide-react';
 import { Vendor } from '@/types';
 import { VendorCard } from '@/components/VendorCard';
 import { useFair } from '@/lib/fair-context';
@@ -9,6 +9,7 @@ import { useFair } from '@/lib/fair-context';
 export default function FeirantesListPage() {
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [search, setSearch] = useState('');
+  const [onlyOrganic, setOnlyOrganic] = useState(false);
   const [loading, setLoading] = useState(true);
   const { selectedFairId, selectedFair, fairs, setSelectedFairId } = useFair();
 
@@ -27,6 +28,10 @@ export default function FeirantesListPage() {
   }, []);
 
   const filtered = vendors.filter(v => {
+    if (onlyOrganic && !(v.isCertifiedOrganic && v.certStatus === 'APPROVED')) {
+      return false;
+    }
+
     // Filter by selected fair if one is active
     if (selectedFairId !== 'ALL' && selectedFair) {
       const matchesFairRelation = v.fairLocations?.some(
@@ -92,20 +97,38 @@ export default function FeirantesListPage() {
         </div>
       </div>
 
-      <div className="max-w-md bg-white p-2 rounded-2xl border border-stone-200 shadow-xs flex items-center gap-2">
-        <Search className="w-4 h-4 text-stone-400 ml-2" />
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Buscar por feirante, categoria ou local..."
-          className="w-full text-xs bg-transparent focus:outline-none text-stone-800 py-1.5"
-        />
-        {search && (
-          <button onClick={() => setSearch('')} className="text-xs text-stone-400 hover:text-stone-600 mr-2">
-            Limpar
-          </button>
-        )}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <div className="max-w-md w-full bg-white p-2 rounded-2xl border border-stone-200 shadow-xs flex items-center gap-2">
+          <Search className="w-4 h-4 text-stone-400 ml-2" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Buscar por feirante, categoria ou local..."
+            className="w-full text-xs bg-transparent focus:outline-none text-stone-800 py-1.5"
+          />
+          {search && (
+            <button onClick={() => setSearch('')} className="text-xs text-stone-400 hover:text-stone-600 mr-2 cursor-pointer">
+              Limpar
+            </button>
+          )}
+        </div>
+
+        {/* Filter Pill: Somente Orgânicos Certificados (US27) */}
+        <button
+          onClick={() => setOnlyOrganic(!onlyOrganic)}
+          className={`px-4 py-2.5 rounded-2xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-xs border shrink-0 ${
+            onlyOrganic
+              ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-300 shadow-emerald-500/20'
+              : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+          }`}
+        >
+          <Leaf className={`w-3.5 h-3.5 ${onlyOrganic ? 'text-white fill-white' : 'text-emerald-600'}`} />
+          <span>🌿 Apenas Produtores Certificados</span>
+          {onlyOrganic && (
+            <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
+          )}
+        </button>
       </div>
 
       {loading ? (
@@ -125,8 +148,9 @@ export default function FeirantesListPage() {
             onClick={() => {
               setSelectedFairId('ALL');
               setSearch('');
+              setOnlyOrganic(false);
             }}
-            className="mt-4 px-4 py-2 bg-feira-600 text-white rounded-xl text-xs font-semibold"
+            className="mt-4 px-4 py-2 bg-feira-600 text-white rounded-xl text-xs font-semibold cursor-pointer"
           >
             Ver feirantes de todas as praças
           </button>

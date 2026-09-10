@@ -37,6 +37,7 @@ export default function HomePage() {
   const [featuredVendors, setFeaturedVendors] = useState<Vendor[]>([]);
   const [selectedCategory, setSelectedCategory] = useState('Todos');
   const [searchQuery, setSearchQuery] = useState('');
+  const [onlyCertifiedOrganic, setOnlyCertifiedOrganic] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -63,6 +64,9 @@ export default function HomePage() {
 
   const filteredVendors = vendors.filter(v => {
     if (!v.active) return false;
+    if (onlyCertifiedOrganic && !(v.isCertifiedOrganic && v.certStatus === 'APPROVED')) {
+      return false;
+    }
     if (selectedFairId === 'ALL' || !selectedFair) return true;
 
     // Check if vendor has matching fair location relation
@@ -85,9 +89,13 @@ export default function HomePage() {
   });
 
   const activeFilteredVendorIds = new Set(filteredVendors.map(v => v.id));
+  const certifiedVendorIds = new Set(
+    vendors.filter(v => v.isCertifiedOrganic && v.certStatus === 'APPROVED').map(v => v.id)
+  );
 
   const filteredProducts = products.filter(p => {
     if (vendors.length > 0 && !activeFilteredVendorIds.has(p.vendorId)) return false;
+    if (onlyCertifiedOrganic && !certifiedVendorIds.has(p.vendorId)) return false;
     const matchCategory = selectedCategory === 'Todos' || p.category.toLowerCase().includes(selectedCategory.toLowerCase());
     const query = searchQuery.toLowerCase();
     const matchSearch = !searchQuery || 
@@ -192,19 +200,38 @@ export default function HomePage() {
 
       {/* Categories Filter Bar */}
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between mb-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4 text-stone-500" />
             <h2 className="text-sm font-bold uppercase tracking-wider text-stone-600">Categorias</h2>
           </div>
-          {selectedCategory !== 'Todos' && (
+
+          <div className="flex flex-wrap items-center gap-2.5">
+            {/* Filter Toggle: Somente Orgânicos Certificados (US27) */}
             <button
-              onClick={() => setSelectedCategory('Todos')}
-              className="text-xs text-feira-700 font-semibold hover:underline"
+              onClick={() => setOnlyCertifiedOrganic(!onlyCertifiedOrganic)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-xs border ${
+                onlyCertifiedOrganic
+                  ? 'bg-emerald-600 text-white border-emerald-600 ring-2 ring-emerald-300 shadow-emerald-500/20'
+                  : 'bg-white text-emerald-800 border-emerald-300 hover:bg-emerald-50'
+              }`}
             >
-              Ver todas
+              <Leaf className={`w-3.5 h-3.5 ${onlyCertifiedOrganic ? 'text-white fill-white' : 'text-emerald-600'}`} />
+              <span>🌿 Somente Orgânicos Certificados</span>
+              {onlyCertifiedOrganic && (
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse" />
+              )}
             </button>
-          )}
+
+            {selectedCategory !== 'Todos' && (
+              <button
+                onClick={() => setSelectedCategory('Todos')}
+                className="text-xs text-feira-700 font-semibold hover:underline cursor-pointer"
+              >
+                Ver todas
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="flex items-center gap-2 overflow-x-auto pb-2 scrollbar-none">
@@ -318,8 +345,9 @@ export default function HomePage() {
               onClick={() => {
                 setSelectedCategory('Todos');
                 setSearchQuery('');
+                setOnlyCertifiedOrganic(false);
               }}
-              className="mt-4 px-4 py-2 bg-feira-600 text-white rounded-xl text-xs font-semibold"
+              className="mt-4 px-4 py-2 bg-feira-600 text-white rounded-xl text-xs font-semibold cursor-pointer"
             >
               Resetar Filtros
             </button>
@@ -327,7 +355,11 @@ export default function HomePage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
             {filteredProducts.map(product => (
-              <ProductCard key={product.id} product={product} />
+              <ProductCard 
+                key={product.id} 
+                product={product} 
+                vendorIsCertifiedOrganic={certifiedVendorIds.has(product.vendorId)}
+              />
             ))}
           </div>
         )}

@@ -42,7 +42,9 @@ import {
   PieChart,
   RefreshCcw,
   Scale,
-  Compass
+  Compass,
+  Leaf,
+  FileText
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
@@ -51,7 +53,7 @@ import { PeriodFilter } from '@/types';
 
 export default function AdminDashboardPage() {
   const { currentUser } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
@@ -69,6 +71,13 @@ export default function AdminDashboardPage() {
   const [vendorSearch, setVendorSearch] = useState('');
   const [vendorStatusFilter, setVendorStatusFilter] = useState<'ALL' | 'PENDING' | 'ACTIVE' | 'PAUSED'>('ALL');
   const [productSearch, setProductSearch] = useState('');
+
+  // Organic Certification Moderation State (US27)
+  const [certSearch, setCertSearch] = useState('');
+  const [certStatusFilter, setCertStatusFilter] = useState<'ALL' | 'PENDING' | 'APPROVED' | 'REJECTED'>('ALL');
+  const [rejectingVendorId, setRejectingVendorId] = useState<string | null>(null);
+  const [rejectionReasonInput, setRejectionReasonInput] = useState('');
+  const [previewingDocUrl, setPreviewingDocUrl] = useState<string | null>(null);
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
@@ -173,6 +182,91 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleApproveCert = async (vendorId: string) => {
+    try {
+      const now = new Date().toISOString();
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isCertifiedOrganic: true,
+          certStatus: 'APPROVED',
+          certReviewedAt: now,
+          certRejectionReason: null,
+        }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? {
+          ...v,
+          isCertifiedOrganic: true,
+          certStatus: 'APPROVED',
+          certReviewedAt: now,
+          certRejectionReason: null,
+        } : v));
+        setActionFeedback(`Selo 'Orgânico Certificado' aprovado e homologado com sucesso!`);
+        setTimeout(() => setActionFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRejectCert = async (vendorId: string, reason: string) => {
+    try {
+      const now = new Date().toISOString();
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isCertifiedOrganic: false,
+          certStatus: 'REJECTED',
+          certReviewedAt: now,
+          certRejectionReason: reason || 'Documento ilegível, vencido ou com divergência cadastral.',
+        }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? {
+          ...v,
+          isCertifiedOrganic: false,
+          certStatus: 'REJECTED',
+          certReviewedAt: now,
+          certRejectionReason: reason || 'Documento ilegível, vencido ou com divergência cadastral.',
+        } : v));
+        setRejectingVendorId(null);
+        setRejectionReasonInput('');
+        setActionFeedback(`Solicitação de certificação orgânica rejeitada com justificativa enviada.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleRevokeCert = async (vendorId: string) => {
+    try {
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isCertifiedOrganic: false,
+          certStatus: 'NONE',
+          certReviewedAt: new Date().toISOString(),
+        }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? {
+          ...v,
+          isCertifiedOrganic: false,
+          certStatus: 'NONE',
+        } : v));
+        setActionFeedback(`Selo de certificação orgânica revogado.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center">
@@ -210,6 +304,27 @@ export default function AdminDashboardPage() {
   }
 
   const pendingVendorsCount = vendors.filter(v => v.active === false).length;
+  const pendingCertsCount = vendors.filter(v => v.certStatus === 'PENDING').length;
+  const approvedCertsCount = vendors.filter(v => v.certStatus === 'APPROVED' && v.isCertifiedOrganic).length;
+  const rejectedCertsCount = vendors.filter(v => v.certStatus === 'REJECTED').length;
+
+  const filteredCerts = vendors.filter(v => {
+    const hasCertActivity = Boolean(v.certStatus && v.certStatus !== 'NONE');
+    if (certStatusFilter === 'ALL' && !hasCertActivity && !certSearch) return false;
+
+    const query = certSearch.toLowerCase();
+    const matchesSearch = !certSearch ||
+      v.businessName?.toLowerCase().includes(query) ||
+      v.certRegistrationNumber?.toLowerCase().includes(query) ||
+      v.certIssuingBody?.toLowerCase().includes(query) ||
+      v.user?.name?.toLowerCase().includes(query);
+
+    if (!matchesSearch) return false;
+    if (certStatusFilter === 'PENDING') return v.certStatus === 'PENDING';
+    if (certStatusFilter === 'APPROVED') return v.certStatus === 'APPROVED';
+    if (certStatusFilter === 'REJECTED') return v.certStatus === 'REJECTED';
+    return true;
+  });
 
   const filteredVendors = vendors.filter(v => {
     const matchesSearch = 
@@ -1231,6 +1346,16 @@ export default function AdminDashboardPage() {
               <span>{pendingVendorsCount} barraca(s) pendente(s)</span>
             </button>
           )}
+
+          {pendingCertsCount > 0 && (
+            <button
+              onClick={() => setActiveTab('CERT_MODERATION')}
+              className="p-2.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 flex items-center gap-2 text-xs font-bold shadow-xs hover:bg-emerald-100 transition cursor-pointer"
+            >
+              <Leaf className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{pendingCertsCount} selo(s) para homologar</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -1315,6 +1440,26 @@ export default function AdminDashboardPage() {
           <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
             {products.length}
           </span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('CERT_MODERATION')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'CERT_MODERATION'
+              ? 'border-emerald-600 text-emerald-900'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Leaf className="w-4 h-4 text-emerald-600" />
+          Moderação de Selos
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+            US27
+          </span>
+          {pendingCertsCount > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold animate-pulse">
+              {pendingCertsCount}
+            </span>
+          )}
         </button>
       </div>
 
@@ -1750,6 +1895,445 @@ export default function AdminDashboardPage() {
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB: MODERAÇÃO DE SELOS ORGÂNICOS (US27) ================= */}
+      {activeTab === 'CERT_MODERATION' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-900 via-teal-950 to-stone-900 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
+            <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-1.5">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
+                  <Leaf className="w-3.5 h-3.5 text-emerald-300" />
+                  Homologação de Selos • US27
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Auditoria de Autenticidade Orgânica</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                  Fila de Moderação de Selos de Produtor Orgânico
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                  Avalie os comprovantes e números de registro enviados pelos feirantes. Ao aprovar, a barraca e seus produtos recebem o selo <strong>🌿 Orgânico Certificado</strong> com resposta automática aos filtros da vitrine.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3">
+                <div className="bg-white/10 border border-white/20 rounded-2xl p-3 text-center min-w-[100px]">
+                  <span className="text-[10px] uppercase font-bold text-emerald-200 block">Pendentes</span>
+                  <span className="text-2xl font-black text-white">{pendingCertsCount}</span>
+                </div>
+                <div className="bg-white/10 border border-white/20 rounded-2xl p-3 text-center min-w-[100px]">
+                  <span className="text-[10px] uppercase font-bold text-emerald-200 block">Homologados</span>
+                  <span className="text-2xl font-black text-emerald-300">{approvedCertsCount}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Metrics Cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-amber-200 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
+              <div>
+                <span className="text-xs font-semibold text-amber-800 block uppercase tracking-wider">Aguardando Avaliação</span>
+                <span className="text-2xl font-black text-amber-900 mt-1 block">{pendingCertsCount}</span>
+                <span className="text-[11px] text-amber-700 font-semibold mt-0.5 block">Documentos na fila</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <Clock className="w-5 h-5 animate-pulse" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-emerald-200 shadow-xs flex items-center justify-between bg-gradient-to-br from-emerald-50/40 to-white">
+              <div>
+                <span className="text-xs font-semibold text-emerald-800 block uppercase tracking-wider">Selos Ativos na Vitrine</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">{approvedCertsCount}</span>
+                <span className="text-[11px] text-emerald-600 font-semibold mt-0.5 block">Produtores auditados</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <CheckCircle2 className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Solicitações Recusadas</span>
+                <span className="text-2xl font-black text-stone-700 mt-1 block">{rejectedCertsCount}</span>
+                <span className="text-[11px] text-stone-500 font-semibold mt-0.5 block">Com justificativa enviada</span>
+              </div>
+              <div className="w-10 h-10 rounded-xl bg-stone-100 text-stone-600 flex items-center justify-center shrink-0">
+                <XCircle className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Table Container */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-5">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+              <div>
+                <h3 className="font-extrabold text-stone-900 text-lg">Fila de Solicitações de Certificação</h3>
+                <p className="text-xs text-stone-500">
+                  Verifique a validade do documento anexado e confirme a conformidade cadastral
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative">
+                  <Search className="w-4 h-4 text-stone-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    value={certSearch}
+                    onChange={e => setCertSearch(e.target.value)}
+                    placeholder="Buscar barraca, órgão ou SisOrg..."
+                    className="pl-9 pr-4 py-2 text-xs bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500 w-full sm:w-64"
+                  />
+                </div>
+
+                <div className="flex rounded-xl bg-stone-100 p-1 text-[11px] font-bold">
+                  <button
+                    onClick={() => setCertStatusFilter('ALL')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${certStatusFilter === 'ALL' ? 'bg-white text-stone-900 shadow-2xs' : 'text-stone-500'}`}
+                  >
+                    Todas ({vendors.filter(v => v.certStatus && v.certStatus !== 'NONE').length})
+                  </button>
+                  <button
+                    onClick={() => setCertStatusFilter('PENDING')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${certStatusFilter === 'PENDING' ? 'bg-white text-amber-900 shadow-2xs' : 'text-stone-500'}`}
+                  >
+                    Pendentes ({pendingCertsCount})
+                  </button>
+                  <button
+                    onClick={() => setCertStatusFilter('APPROVED')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${certStatusFilter === 'APPROVED' ? 'bg-white text-emerald-900 shadow-2xs' : 'text-stone-500'}`}
+                  >
+                    Homologadas ({approvedCertsCount})
+                  </button>
+                  <button
+                    onClick={() => setCertStatusFilter('REJECTED')}
+                    className={`px-2.5 py-1 rounded-lg transition cursor-pointer ${certStatusFilter === 'REJECTED' ? 'bg-white text-red-900 shadow-2xs' : 'text-stone-500'}`}
+                  >
+                    Recusadas ({rejectedCertsCount})
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold uppercase text-[10px]">
+                  <tr>
+                    <th className="p-3.5">Barraca / Feirante</th>
+                    <th className="p-3.5">Órgão Emissor / Certificadora</th>
+                    <th className="p-3.5">Nº Registro (SisOrg/MAPA)</th>
+                    <th className="p-3.5">Documento Comprobatório</th>
+                    <th className="p-3.5">Data Submissão</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Ação do Administrador</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100">
+                  {filteredCerts.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-stone-400">
+                        Nenhuma solicitação de selo encontrada com os filtros selecionados.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCerts.map(v => (
+                      <tr key={v.id} className={`hover:bg-stone-50/60 transition ${v.certStatus === 'PENDING' ? 'bg-amber-50/30' : ''}`}>
+                        
+                        {/* Vendor Name & Info */}
+                        <td className="p-3.5">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-stone-100 overflow-hidden shrink-0 border border-stone-200">
+                              {v.avatar ? (
+                                <img src={v.avatar} alt={v.businessName} className="w-full h-full object-cover" />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-stone-400">
+                                  <Store className="w-4 h-4" />
+                                </div>
+                              )}
+                            </div>
+                            <div>
+                              <div className="font-extrabold text-stone-900 flex items-center gap-1.5">
+                                {v.businessName}
+                                {v.isCertifiedOrganic && (
+                                  <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-black border border-emerald-300">
+                                    🌿 Selo Ativo
+                                  </span>
+                                )}
+                              </div>
+                              <div className="text-[11px] text-stone-400">{v.fairLocation}</div>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Issuing Agency */}
+                        <td className="p-3.5 text-stone-700 font-medium">
+                          {v.certIssuingBody || <span className="text-stone-400 italic">Não informado</span>}
+                        </td>
+
+                        {/* Registration Number */}
+                        <td className="p-3.5">
+                          {v.certRegistrationNumber ? (
+                            <span className="font-mono font-bold text-stone-900 bg-stone-100 px-2 py-0.5 rounded text-[11px]">
+                              {v.certRegistrationNumber}
+                            </span>
+                          ) : (
+                            <span className="text-stone-400 italic">-</span>
+                          )}
+                        </td>
+
+                        {/* Document */}
+                        <td className="p-3.5">
+                          {v.certificationDocUrl ? (
+                            <button
+                              onClick={() => setPreviewingDocUrl(v.certificationDocUrl)}
+                              className="inline-flex items-center gap-1 text-emerald-700 hover:text-emerald-900 font-bold hover:underline cursor-pointer"
+                            >
+                              <FileText className="w-3.5 h-3.5" />
+                              <span>Inspecionar Doc</span>
+                            </button>
+                          ) : (
+                            <span className="text-stone-400 italic">Sem anexo</span>
+                          )}
+                        </td>
+
+                        {/* Date */}
+                        <td className="p-3.5 text-stone-500 text-[11px]">
+                          {v.certSubmittedAt ? (
+                            <span>{new Date(v.certSubmittedAt).toLocaleDateString('pt-BR')}</span>
+                          ) : (
+                            <span>-</span>
+                          )}
+                        </td>
+
+                        {/* Status Badge */}
+                        <td className="p-3.5">
+                          {v.certStatus === 'APPROVED' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800">
+                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                              Homologado
+                            </span>
+                          )}
+                          {v.certStatus === 'PENDING' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                              <Clock className="w-3.5 h-3.5 text-amber-600" />
+                              Em Análise
+                            </span>
+                          )}
+                          {v.certStatus === 'REJECTED' && (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-800" title={v.certRejectionReason || ''}>
+                              <XCircle className="w-3.5 h-3.5 text-red-600" />
+                              Recusado
+                            </span>
+                          )}
+                          {(!v.certStatus || v.certStatus === 'NONE') && (
+                            <span className="text-stone-400 text-[11px]">Não Solicitado</span>
+                          )}
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-3.5 text-right space-x-2 whitespace-nowrap">
+                          {v.certStatus === 'PENDING' && (
+                            <>
+                              <button
+                                onClick={() => handleApproveCert(v.id)}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold transition shadow-xs cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <Check className="w-3.5 h-3.5" />
+                                Aprovar Selo
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setRejectingVendorId(v.id);
+                                  setRejectionReasonInput('');
+                                }}
+                                className="px-2.5 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 border border-red-200 font-bold transition cursor-pointer inline-flex items-center gap-1"
+                              >
+                                <XCircle className="w-3.5 h-3.5" />
+                                Recusar
+                              </button>
+                            </>
+                          )}
+
+                          {v.certStatus === 'APPROVED' && (
+                            <button
+                              onClick={() => handleRevokeCert(v.id)}
+                              className="px-2.5 py-1.5 rounded-xl bg-stone-100 hover:bg-red-50 hover:text-red-700 hover:border-red-200 border border-stone-200 text-stone-600 font-semibold transition cursor-pointer inline-flex items-center gap-1 text-[11px]"
+                            >
+                              Revogar Selo
+                            </button>
+                          )}
+
+                          {v.certStatus === 'REJECTED' && (
+                            <button
+                              onClick={() => handleApproveCert(v.id)}
+                              className="px-2.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 font-bold transition cursor-pointer text-[11px]"
+                            >
+                              Reconsiderar / Aprovar
+                            </button>
+                          )}
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Modal: Inspecionar Documento do Certificado */}
+      {previewingDocUrl && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-emerald-50/60">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Comprovante de Certificação Orgânica</h3>
+                  <p className="text-[11px] text-stone-500">Documento anexado pelo feirante para validação da moderação</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setPreviewingDocUrl(null)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 max-h-[500px] overflow-y-auto">
+              <div className="rounded-2xl border border-stone-200 overflow-hidden bg-stone-50 flex items-center justify-center min-h-[300px]">
+                <img
+                  src={previewingDocUrl}
+                  alt="Comprovante de Certificado"
+                  className="w-full h-auto max-h-[460px] object-contain"
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-stone-500">
+                <span className="truncate max-w-sm font-mono text-[11px]">{previewingDocUrl}</span>
+                <a
+                  href={previewingDocUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-emerald-700 font-bold hover:underline inline-flex items-center gap-1"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" /> Abrir em Nova Aba
+                </a>
+              </div>
+            </div>
+
+            <div className="p-4 border-t border-stone-100 bg-stone-50 flex justify-end">
+              <button
+                onClick={() => setPreviewingDocUrl(null)}
+                className="px-5 py-2 rounded-xl bg-stone-900 hover:bg-stone-800 text-white font-bold text-xs cursor-pointer"
+              >
+                Fechar Visualização
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Justificativa de Recusa de Selo */}
+      {rejectingVendorId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-red-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-red-600 text-white flex items-center justify-center">
+                  <ShieldAlert className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Recusar Solicitação de Selo</h3>
+                  <p className="text-[11px] text-stone-500">Informe o motivo da não aprovação para o feirante</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setRejectingVendorId(null)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <span className="font-bold text-stone-700 block mb-1">Selecione uma justificativa rápida:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setRejectionReasonInput('Documento ilegível ou com baixa resolução.')}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] cursor-pointer"
+                  >
+                    Documento Ilegível
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionReasonInput('Prazo de validade do certificado expirado.')}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] cursor-pointer"
+                  >
+                    Certificado Vencido
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionReasonInput('Número de registro não localizado no Cadastro Nacional SisOrg/MAPA.')}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] cursor-pointer"
+                  >
+                    Registro Não Localizado
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setRejectionReasonInput('Divergência entre o titular do certificado e o cadastro da barraca.')}
+                    className="px-2.5 py-1 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[11px] cursor-pointer"
+                  >
+                    Divergência Cadastral
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Mensagem / Justificativa detalhada:
+                </label>
+                <textarea
+                  rows={3}
+                  required
+                  value={rejectionReasonInput}
+                  onChange={e => setRejectionReasonInput(e.target.value)}
+                  placeholder="Explique o que precisa ser corrigido para que o feirante reenvie..."
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-red-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-2 border-t border-stone-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setRejectingVendorId(null)}
+                  className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRejectCert(rejectingVendorId, rejectionReasonInput)}
+                  className="flex-1 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold cursor-pointer"
+                >
+                  Confirmar Recusa
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

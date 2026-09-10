@@ -32,7 +32,11 @@ import {
   Banknote,
   RefreshCw,
   Scale,
-  Send
+  Send,
+  Leaf,
+  FileText,
+  UploadCloud,
+  ShieldCheck
 } from 'lucide-react';
 import { Order, Product, Vendor, OrderStatus, PickupWindow, Review, FairLocation, VendorFairLocation } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -82,12 +86,20 @@ interface FinancialStats {
 
 export default function VendorDashboardPage() {
   const { currentUser, currentVendor, updateCurrentVendor } = useUser();
-  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL'>('KANBAN');
+  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL' | 'CERTIFICATIONS'>('KANBAN');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [pickupWindows, setPickupWindows] = useState<PickupWindow[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Organic Certification State (US27)
+  const [certRegNumber, setCertRegNumber] = useState('');
+  const [certAgency, setCertAgency] = useState('Ecocert Brasil');
+  const [certDocUrl, setCertDocUrl] = useState('');
+  const [certSubmitting, setCertSubmitting] = useState(false);
+  const [certSuccessMsg, setCertSuccessMsg] = useState<string | null>(null);
+  const [certErrorMsg, setCertErrorMsg] = useState<string | null>(null);
 
   // Orders Audit Filter State
   const [orderSearch, setOrderSearch] = useState('');
@@ -159,7 +171,7 @@ export default function VendorDashboardPage() {
   const isVendor = currentUser?.role === 'VENDOR';
   const activeVendorId = currentVendor?.id || 'vendor-1';
 
-  // Synchronize bio modal initial state when currentVendor changes
+  // Synchronize bio and certification initial state when currentVendor changes
   useEffect(() => {
     if (currentVendor) {
       setBioDesc(currentVendor.description || '');
@@ -168,8 +180,51 @@ export default function VendorDashboardPage() {
       setBioCategory(currentVendor.category || 'Hortifrúti');
       setBioWhatsappPhone(currentVendor.whatsappPhone || '87998018279');
       setWinLoc(currentVendor.fairLocation || 'Feira Livre da Praça da Matriz');
+      setCertRegNumber(currentVendor.certRegistrationNumber || '');
+      setCertAgency(currentVendor.certIssuingBody || 'Ecocert Brasil');
+      setCertDocUrl(currentVendor.certificationDocUrl || '');
     }
   }, [currentVendor]);
+
+  const handleSubmitCertification = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!certRegNumber.trim()) {
+      setCertErrorMsg('Por favor, informe o número de registro do certificado.');
+      return;
+    }
+    setCertSubmitting(true);
+    setCertErrorMsg(null);
+    setCertSuccessMsg(null);
+    try {
+      const payload = {
+        certRegistrationNumber: certRegNumber.trim(),
+        certIssuingBody: certAgency.trim(),
+        certificationDocUrl: certDocUrl.trim() || 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+        certStatus: 'PENDING' as const,
+        certSubmittedAt: new Date().toISOString(),
+        isCertifiedOrganic: false, // will become true upon admin approval
+      };
+
+      const res = await fetch(`/api/vendors/${activeVendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      if (res.ok) {
+        updateCurrentVendor(payload);
+        setCertSuccessMsg('Certificado submetido com sucesso! Sua solicitação entrou na fila de moderação do administrador.');
+        setTimeout(() => setCertSuccessMsg(null), 8000);
+      } else {
+        setCertErrorMsg('Erro ao submeter certificação. Verifique os dados e tente novamente.');
+      }
+    } catch (err) {
+      console.error(err);
+      setCertErrorMsg('Erro de conexão ao submeter o certificado.');
+    } finally {
+      setCertSubmitting(false);
+    }
+  };
 
   const loadVendorData = async () => {
     if (!isVendor) {
@@ -1623,6 +1678,27 @@ export default function VendorDashboardPage() {
             {financeData?.totalOrdersCount ?? 0}
           </span>
         </button>
+
+        <button
+          onClick={() => setActiveTab('CERTIFICATIONS')}
+          className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'CERTIFICATIONS'
+              ? 'border-emerald-600 text-emerald-800'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Leaf className="w-4 h-4 text-emerald-600" />
+          Certificações & Selo
+          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-[10px] text-emerald-800 font-extrabold">
+            US27
+          </span>
+          {currentVendor?.certStatus === 'APPROVED' && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500" title="Selo Orgânico Ativo" />
+          )}
+          {currentVendor?.certStatus === 'PENDING' && (
+            <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Em Análise" />
+          )}
+        </button>
       </div>
 
       {/* Tab 1: KANBAN */}
@@ -2647,6 +2723,412 @@ export default function VendorDashboardPage() {
               </div>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Tab 7: CERTIFICAÇÕES (US27) */}
+      {activeTab === 'CERTIFICATIONS' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-emerald-800 via-teal-800 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
+            <div className="absolute right-0 top-0 translate-x-10 -translate-y-10 w-64 h-64 bg-emerald-400/10 rounded-full blur-3xl pointer-events-none" />
+            <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="space-y-2">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
+                  <Leaf className="w-3.5 h-3.5 text-emerald-300" />
+                  Auditoria Agroecológica • US27
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  <span>Selo de Autenticidade Verificada</span>
+                </div>
+                <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                  Selo de Produtor Orgânico Certificado
+                </h2>
+                <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                  Submeta seu certificado emitido por certificadoras oficiais credenciadas (Ecocert, IBD, SisOrg/MAPA, Ecovida). Após a aprovação da moderação, sua barraca e seus produtos recebem o selo oficial <strong>🌿 Orgânico Certificado</strong> na vitrine e nos filtros da plataforma.
+                </p>
+              </div>
+
+              {currentVendor?.certStatus === 'APPROVED' && (
+                <div className="px-4 py-2.5 rounded-2xl bg-emerald-500/20 border border-emerald-400/40 text-emerald-100 flex items-center gap-2 shrink-0 self-start md:self-auto shadow-xs">
+                  <ShieldCheck className="w-5 h-5 text-emerald-300" />
+                  <div>
+                    <div className="text-xs font-black">Selo Homologado</div>
+                    <div className="text-[10px] text-emerald-200">Ativo na Vitrine Pública</div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Current Status Card */}
+          {(() => {
+            const status = currentVendor?.certStatus || 'NONE';
+            const isApproved = status === 'APPROVED' && currentVendor?.isCertifiedOrganic;
+            const isPending = status === 'PENDING';
+            const isRejected = status === 'REJECTED';
+
+            if (isApproved) {
+              return (
+                <div className="bg-white rounded-3xl border-2 border-emerald-500/80 p-6 sm:p-7 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-emerald-100 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0 shadow-xs">
+                        <CheckCircle2 className="w-6 h-6 text-emerald-600" />
+                      </div>
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                          🌿 Orgânico Certificado Ativo
+                        </div>
+                        <h3 className="font-extrabold text-stone-900 text-base mt-1">
+                          Sua Barraca Possui Certificação Orgânica Oficial Verificada
+                        </h3>
+                      </div>
+                    </div>
+
+                    <span className="text-xs text-stone-500 font-medium">
+                      Status: <strong className="text-emerald-700">Homologado pela Administração</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-1">
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-1">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase tracking-wider block">Órgão Emissor / Certificadora</span>
+                      <span className="font-extrabold text-stone-900 block text-sm">{currentVendor?.certIssuingBody || 'Ecocert Brasil / MAPA'}</span>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-1">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase tracking-wider block">Número de Registro / SisOrg</span>
+                      <span className="font-extrabold text-emerald-800 font-mono block text-sm">{currentVendor?.certRegistrationNumber || 'N/A'}</span>
+                    </div>
+
+                    <div className="p-3.5 rounded-2xl bg-emerald-50/60 border border-emerald-100 space-y-1">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase tracking-wider block">Documento Comprobatório</span>
+                      {currentVendor?.certificationDocUrl ? (
+                        <a
+                          href={currentVendor.certificationDocUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-bold text-emerald-700 hover:text-emerald-900 flex items-center gap-1 underline text-xs pt-0.5"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Ver Certificado Anexo
+                        </a>
+                      ) : (
+                        <span className="text-stone-500">Documento homologado</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200 text-xs text-stone-600 flex items-start gap-2.5">
+                    <Sparkles className="w-4 h-4 text-amber-500 shrink-0 mt-0.5" />
+                    <p className="leading-relaxed">
+                      O selo <strong>"🌿 Orgânico Certificado"</strong> é exibido em destaque no cabeçalho da sua barraca e em todos os seus produtos. Além disso, clientes que ativarem o filtro <em>"🌿 Apenas Produtores Certificados"</em> na vitrine e na busca encontrarão sua banca com máxima prioridade.
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isPending) {
+              return (
+                <div className="bg-amber-50/80 rounded-3xl border-2 border-amber-300 p-6 sm:p-7 shadow-xs space-y-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-amber-200/80 pb-4">
+                    <div className="flex items-center gap-3">
+                      <div className="w-12 h-12 rounded-2xl bg-amber-200 text-amber-900 flex items-center justify-center shrink-0 shadow-xs">
+                        <Clock className="w-6 h-6 text-amber-800 animate-pulse" />
+                      </div>
+                      <div>
+                        <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-amber-200 text-amber-900 border border-amber-300">
+                          ⏳ Solicitação em Análise pela Moderação
+                        </div>
+                        <h3 className="font-extrabold text-amber-950 text-base mt-1">
+                          Certificado Submetido com Sucesso
+                        </h3>
+                      </div>
+                    </div>
+
+                    <span className="text-xs text-amber-800 font-medium">
+                      Fila de Moderação da Feirae
+                    </span>
+                  </div>
+
+                  <p className="text-xs text-amber-900 leading-relaxed">
+                    Sua documentação foi enviada para o administrador da feira. Estamos verificando a conformidade do registro junto ao órgão emissor informado. Assim que aprovado, o selo será ativado automaticamente na sua vitrine.
+                  </p>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs pt-1">
+                    <div className="p-3 rounded-xl bg-white/80 border border-amber-200">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase block">Órgão Informado:</span>
+                      <strong className="text-stone-800">{currentVendor?.certIssuingBody || certAgency}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white/80 border border-amber-200">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase block">Nº de Registro:</span>
+                      <strong className="text-stone-800 font-mono">{currentVendor?.certRegistrationNumber || certRegNumber}</strong>
+                    </div>
+                    <div className="p-3 rounded-xl bg-white/80 border border-amber-200">
+                      <span className="text-stone-400 text-[10px] font-bold uppercase block">Documento Anexado:</span>
+                      {currentVendor?.certificationDocUrl ? (
+                        <a
+                          href={currentVendor.certificationDocUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-amber-800 font-bold hover:underline flex items-center gap-1"
+                        >
+                          <FileText className="w-3.5 h-3.5" /> Abrir Comprovante
+                        </a>
+                      ) : (
+                        <span className="text-stone-500">Documento anexado</span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            }
+
+            if (isRejected) {
+              return (
+                <div className="bg-red-50/80 rounded-3xl border-2 border-red-300 p-6 sm:p-7 shadow-xs space-y-4">
+                  <div className="flex items-center gap-3 border-b border-red-200/80 pb-4">
+                    <div className="w-12 h-12 rounded-2xl bg-red-100 text-red-700 flex items-center justify-center shrink-0">
+                      <ShieldAlert className="w-6 h-6 text-red-600" />
+                    </div>
+                    <div>
+                      <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-black bg-red-200 text-red-900">
+                        ❌ Solicitação Não Aprovada
+                      </div>
+                      <h3 className="font-extrabold text-red-950 text-base mt-1">
+                        A documentação anterior precisa de revisão
+                      </h3>
+                    </div>
+                  </div>
+
+                  {currentVendor?.certRejectionReason && (
+                    <div className="p-3.5 rounded-2xl bg-white/90 border border-red-200 text-xs text-red-900 space-y-1">
+                      <strong className="block text-[11px] uppercase tracking-wider text-red-700">Motivo informado pela administração:</strong>
+                      <p>{currentVendor.certRejectionReason}</p>
+                    </div>
+                  )}
+
+                  <p className="text-xs text-stone-600">
+                    Você pode corrigir as informações ou anexar um novo documento no formulário abaixo e submeter uma nova solicitação.
+                  </p>
+                </div>
+              );
+            }
+
+            return (
+              <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-11 h-11 rounded-2xl bg-stone-100 text-stone-600 flex items-center justify-center shrink-0">
+                    <Leaf className="w-5 h-5 text-emerald-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-extrabold text-stone-900 text-base">
+                      Sua barraca ainda não possui solicitação de certificação
+                    </h3>
+                    <p className="text-xs text-stone-500">
+                      Caso você produza alimentos orgânicos certificados, envie sua documentação para validação.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2 text-xs">
+                  <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-1">
+                    <span className="font-bold text-stone-900 flex items-center gap-1">
+                      🌿 Selo de Autenticidade
+                    </span>
+                    <p className="text-stone-500 text-[11px]">
+                      Badge visual exclusivo em todos os produtos e no perfil da banca.
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-1">
+                    <span className="font-bold text-stone-900 flex items-center gap-1">
+                      🔍 Filtro Dedicado
+                    </span>
+                    <p className="text-stone-500 text-[11px]">
+                      Clientes podem filtrar exclusivamente por feirantes certificados na vitrine.
+                    </p>
+                  </div>
+                  <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200 space-y-1">
+                    <span className="font-bold text-stone-900 flex items-center gap-1">
+                      🤝 Confiança & Ticket Médio
+                    </span>
+                    <p className="text-stone-500 text-[11px]">
+                      Maior valor percebido para clientes interessados em alimentação saudável.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Submission Form */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-8 shadow-xs space-y-6">
+            <div className="border-b border-stone-100 pb-4">
+              <div className="flex items-center gap-2">
+                <Leaf className="w-4 h-4 text-emerald-600" />
+                <h3 className="font-extrabold text-stone-900 text-base">
+                  {currentVendor?.certStatus === 'APPROVED' ? 'Atualizar Documentação de Certificação' : 'Formulário de Submissão de Certificado Orgânico'}
+                </h3>
+              </div>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Preencha os dados do órgão certificador e anexe o comprovante (documento PDF ou imagem legível).
+              </p>
+            </div>
+
+            {/* Quick Presets / Examples for fast testing */}
+            <div className="p-3.5 rounded-2xl bg-emerald-50/50 border border-emerald-200/60 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="flex items-center gap-2 text-emerald-900 font-bold">
+                <Sparkles className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>Exemplos de preenchimento rápido para teste:</span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCertAgency('Ecocert Brasil');
+                    setCertRegNumber('ECO-BR-2024-9981');
+                    setCertDocUrl('https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-emerald-300 text-emerald-800 text-[11px] font-bold hover:bg-emerald-100 transition cursor-pointer"
+                >
+                  Exemplo Ecocert Brasil
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setCertAgency('MAPA / Cadastro Nacional SisOrg');
+                    setCertRegNumber('SISORG-BR-884210');
+                    setCertDocUrl('https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80');
+                  }}
+                  className="px-2.5 py-1 rounded-lg bg-white border border-emerald-300 text-emerald-800 text-[11px] font-bold hover:bg-emerald-100 transition cursor-pointer"
+                >
+                  Exemplo MAPA / SisOrg
+                </button>
+              </div>
+            </div>
+
+            {certSuccessMsg && (
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{certSuccessMsg}</span>
+              </div>
+            )}
+
+            {certErrorMsg && (
+              <div className="p-4 rounded-2xl bg-red-50 border border-red-200 text-red-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+                <ShieldAlert className="w-4 h-4 text-red-600 shrink-0" />
+                <span>{certErrorMsg}</span>
+              </div>
+            )}
+
+            <form onSubmit={handleSubmitCertification} className="space-y-4 text-xs">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                
+                {/* Registration Number */}
+                <div className="space-y-1.5">
+                  <label className="font-extrabold text-stone-800 block">
+                    Número de Registro / Código do Certificado <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={certRegNumber}
+                    onChange={e => setCertRegNumber(e.target.value)}
+                    placeholder="Ex: ORG-BR-2024-8841 ou SISORG-8472"
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono"
+                  />
+                  <p className="text-[11px] text-stone-400">
+                    Código que consta no documento oficial emitido pela certificadora.
+                  </p>
+                </div>
+
+                {/* Issuing Agency */}
+                <div className="space-y-1.5">
+                  <label className="font-extrabold text-stone-800 block">
+                    Órgão Emissor / Certificadora Credenciada <span className="text-red-500">*</span>
+                  </label>
+                  <select
+                    value={certAgency}
+                    onChange={e => setCertAgency(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-medium text-stone-800"
+                  >
+                    <option value="Ecocert Brasil">Ecocert Brasil (Certificação por Auditoria)</option>
+                    <option value="IBD Certificações">IBD Certificações</option>
+                    <option value="Rede de Agroecologia Ecovida">Rede de Agroecologia Ecovida (SPG)</option>
+                    <option value="MAPA / Cadastro Nacional SisOrg">MAPA / Cadastro Nacional SisOrg</option>
+                    <option value="OAC Brasil">OAC Brasil</option>
+                    <option value="Certificação Participativa (SPG)">Outro Sistema Participativo de Garantia (SPG)</option>
+                    <option value="Controle Social na Venda Direta (OCS)">Organização de Controle Social (OCS)</option>
+                  </select>
+                  <p className="text-[11px] text-stone-400">
+                    Selecione a certificadora responsável pela vistoria da sua propriedade.
+                  </p>
+                </div>
+
+              </div>
+
+              {/* Doc URL / Upload */}
+              <div className="space-y-1.5">
+                <label className="font-extrabold text-stone-800 block">
+                  Link ou URL do Comprovante do Certificado (PDF ou Imagem) <span className="text-red-500">*</span>
+                </label>
+                <div className="flex gap-2">
+                  <input
+                    type="url"
+                    value={certDocUrl}
+                    onChange={e => setCertDocUrl(e.target.value)}
+                    placeholder="https://exemplo.com/meu-certificado-organico.pdf"
+                    className="flex-1 px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none text-stone-800"
+                  />
+                  {certDocUrl && (
+                    <a
+                      href={certDocUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-3.5 py-2.5 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-700 font-bold flex items-center gap-1 shrink-0"
+                    >
+                      <ExternalLink className="w-3.5 h-3.5" /> Testar Link
+                    </a>
+                  )}
+                </div>
+                <p className="text-[11px] text-stone-400">
+                  Insira o link direto para visualização do documento pelo administrador da feira.
+                </p>
+              </div>
+
+              {/* Document Preview if URL looks like an image */}
+              {certDocUrl && (certDocUrl.includes('images.unsplash.com') || certDocUrl.endsWith('.jpg') || certDocUrl.endsWith('.png')) && (
+                <div className="p-3 rounded-2xl border border-stone-200 bg-stone-50/50 space-y-2">
+                  <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider block">Pré-visualização do Comprovante:</span>
+                  <div className="max-h-48 max-w-sm rounded-xl overflow-hidden border border-stone-200 bg-white">
+                    <img src={certDocUrl} alt="Comprovante de Certificação" className="w-full h-full object-cover" />
+                  </div>
+                </div>
+              )}
+
+              <div className="pt-4 border-t border-stone-100 flex items-center justify-end gap-3">
+                <button
+                  type="submit"
+                  disabled={certSubmitting}
+                  className="px-6 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold shadow-sm hover:shadow-md transition flex items-center gap-2 cursor-pointer disabled:opacity-60"
+                >
+                  {certSubmitting ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Submetendo para Análise...</span>
+                    </>
+                  ) : (
+                    <>
+                      <UploadCloud className="w-4 h-4" />
+                      <span>{currentVendor?.certStatus === 'APPROVED' ? 'Salvar e Atualizar Certificado' : 'Enviar Certificado para Moderação'}</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+
         </div>
       )}
 
