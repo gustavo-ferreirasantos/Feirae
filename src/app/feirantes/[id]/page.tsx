@@ -93,12 +93,20 @@ export default function VendorProfilePage() {
           ) : (
             <div className="w-full h-full bg-gradient-to-r from-feira-600 to-feira-800" />
           )}
-          {(vendor.isSubscriber || vendor.plan === 'PRO') && (
-            <span className="absolute top-4 left-4 px-3 py-1 rounded-full text-xs font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1.5 z-10">
-              <Award className="w-4 h-4 text-stone-900" />
-              Parceiro Pro
-            </span>
-          )}
+          <div className="absolute top-4 left-4 flex flex-wrap gap-2 z-10">
+            {(vendor.isSubscriber || vendor.plan === 'PRO') && (
+              <span className="px-3 py-1 rounded-full text-xs font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1.5">
+                <Award className="w-4 h-4 text-stone-900" />
+                Parceiro Pro
+              </span>
+            )}
+            {vendor.isCertifiedOrganic && vendor.certStatus === 'APPROVED' && (
+              <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-emerald-700 text-white shadow-md flex items-center gap-1.5 border border-emerald-500">
+                <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                🌿 Orgânico Certificado
+              </span>
+            )}
+          </div>
           <span className="absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-white/90 text-stone-800 backdrop-blur-xs shadow-xs">
             {vendor.category}
           </span>
@@ -117,9 +125,16 @@ export default function VendorProfilePage() {
                 )}
               </div>
               <div className="pb-1">
-                <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
-                  {vendor.businessName}
-                </h1>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
+                    {vendor.businessName}
+                  </h1>
+                  {vendor.isCertifiedOrganic && vendor.certStatus === 'APPROVED' && (
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs">
+                      🌿 Orgânico Certificado
+                    </span>
+                  )}
+                </div>
                 <div className="mt-1 flex items-center gap-2">
                   <StarRating rating={vendor.rating} count={vendor.ratingCount} showText size="sm" />
                   {vendor.boothNumber && (
@@ -152,6 +167,41 @@ export default function VendorProfilePage() {
           <p className="text-sm text-stone-600 leading-relaxed max-w-3xl">
             {vendor.description}
           </p>
+
+          {/* Organic Certification Credentials Banner (US27) */}
+          {vendor.isCertifiedOrganic && vendor.certStatus === 'APPROVED' && (
+            <div className="mt-5 p-4 bg-emerald-50/90 border border-emerald-200 rounded-2xl flex flex-wrap items-center justify-between gap-4 text-xs">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center text-base shrink-0 shadow-xs">
+                  🌿
+                </div>
+                <div>
+                  <div className="font-extrabold text-emerald-950 flex items-center gap-1.5 text-xs sm:text-sm">
+                    Produtor Orgânico Oficialmente Homologado
+                    <CheckCircle2 className="w-4 h-4 text-emerald-700 shrink-0" />
+                  </div>
+                  <div className="text-emerald-800 text-[11px] sm:text-xs mt-0.5 flex flex-wrap gap-x-3 gap-y-1">
+                    {vendor.certIssuingBody && (
+                      <span>Órgão Certificador: <strong className="font-semibold text-emerald-950">{vendor.certIssuingBody}</strong></span>
+                    )}
+                    {vendor.certRegistrationNumber && (
+                      <span className="font-mono">Nº de Registro: <strong className="font-semibold text-emerald-950">{vendor.certRegistrationNumber}</strong></span>
+                    )}
+                  </div>
+                </div>
+              </div>
+              {vendor.certificationDocUrl && (
+                <a
+                  href={vendor.certificationDocUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1 font-bold text-emerald-700 hover:text-emerald-900 bg-white hover:bg-emerald-100/50 px-3.5 py-2 rounded-xl border border-emerald-300 text-xs shadow-2xs transition"
+                >
+                  Ver Certificado Oficial ↗
+                </a>
+              )}
+            </div>
+          )}
 
           {/* Pickup schedule info */}
           {pickupWindows.length > 0 && (
@@ -207,6 +257,7 @@ export default function VendorProfilePage() {
                 vendorName: vendor.businessName,
                 stock: vendor.active === false ? 0 : product.stock
               }} 
+              vendorIsCertifiedOrganic={Boolean(vendor.isCertifiedOrganic && vendor.certStatus === 'APPROVED')}
             />
           ))}
         </div>

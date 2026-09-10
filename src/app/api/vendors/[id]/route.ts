@@ -74,6 +74,14 @@ export async function PATCH(
           ...(body.isFeatured !== undefined && { isFeatured: Boolean(body.isFeatured) }),
           ...(body.featuredUntil !== undefined && { featuredUntil: body.featuredUntil ? new Date(body.featuredUntil) : null }),
           ...(body.featuredOrder !== undefined && { featuredOrder: Number(body.featuredOrder) }),
+          ...(body.isCertifiedOrganic !== undefined && { isCertifiedOrganic: Boolean(body.isCertifiedOrganic) }),
+          ...(body.certificationDocUrl !== undefined && { certificationDocUrl: body.certificationDocUrl }),
+          ...(body.certStatus !== undefined && { certStatus: body.certStatus }),
+          ...(body.certRegistrationNumber !== undefined && { certRegistrationNumber: body.certRegistrationNumber }),
+          ...(body.certIssuingBody !== undefined && { certIssuingBody: body.certIssuingBody }),
+          ...(body.certSubmittedAt !== undefined && { certSubmittedAt: body.certSubmittedAt ? new Date(body.certSubmittedAt) : null }),
+          ...(body.certReviewedAt !== undefined && { certReviewedAt: body.certReviewedAt ? new Date(body.certReviewedAt) : null }),
+          ...(body.certRejectionReason !== undefined && { certRejectionReason: body.certRejectionReason }),
         },
       });
 

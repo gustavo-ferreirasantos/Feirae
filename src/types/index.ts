@@ -42,6 +42,8 @@ export interface VendorFairLocation {
   active: boolean;
 }
 
+export type CertStatus = 'NONE' | 'PENDING' | 'APPROVED' | 'REJECTED';
+
 export interface Vendor {
   id: string;
   userId: string;
@@ -63,6 +65,14 @@ export interface Vendor {
   isFeatured?: boolean;
   featuredUntil?: string | null;
   featuredOrder?: number;
+  isCertifiedOrganic?: boolean;
+  certificationDocUrl?: string | null;
+  certStatus?: CertStatus;
+  certRegistrationNumber?: string | null;
+  certIssuingBody?: string | null;
+  certSubmittedAt?: string | null;
+  certReviewedAt?: string | null;
+  certRejectionReason?: string | null;
   active: boolean;
   fairLocations?: VendorFairLocation[];
 }
@@ -178,4 +188,81 @@ export interface Notification {
 export interface CartItem {
   product: Product;
   quantity: number;
+}
+
+export type PeriodFilter = '7d' | '30d' | 'all';
+
+export interface ProductFunnelMetrics {
+  showcaseViews: number;
+  cartAdditions: number;
+  ordersCreated: number;
+  ordersCompleted: number;
+  viewsToCartRate: number;
+  cartToOrderRate: number;
+  orderToCompletedRate: number;
+  overallConversionRate: number;
+}
+
+export interface VendorActivationItem {
+  id: string;
+  businessName: string;
+  category: string;
+  activeProductsCount: number;
+  isActivated: boolean;
+}
+
+export interface VendorActivationMetrics {
+  totalVendors: number;
+  activatedVendors: number;
+  pendingVendors: number;
+  activationRate: number;
+  vendorsBreakdown: VendorActivationItem[];
+}
+
+export interface CustomerRetentionItem {
+  name: string;
+  email: string;
+  ordersCount: number;
+  differentDatesCount: number;
+  hasConsecutiveWeeks: boolean;
+  consecutiveWeeksCount: number;
+  lastOrderDate: string;
+  weeksActive: string[];
+}
+
+export interface CustomerRetentionMetrics {
+  totalCustomers: number;
+  repeatCustomersCount: number;
+  consecutiveWeeksCustomersCount: number;
+  retentionRate: number;
+  consecutiveRetentionRate: number;
+  customers: CustomerRetentionItem[];
+}
+
+export interface ProductAnalyticsData {
+  period: PeriodFilter;
+  funnel: ProductFunnelMetrics;
+  activation: VendorActivationMetrics;
+  retention: CustomerRetentionMetrics;
+}
+
+export interface AdminStats {
+  activeVendors: number;
+  totalProducts?: number;
+  totalOrders: number;
+  totalGMV: number;
+  subscribersCount: number;
+  simulatedCommissionTotal?: number;
+  subscriptionTotal?: number;
+  featuredVendorsCount: number;
+  sponsorshipRevenue: number;
+  totalMonetizationEstimate: number;
+  ordersByStatus: {
+    novo: number;
+    em_preparo: number;
+    pronto: number;
+    retirado: number;
+    cancelado: number;
+  };
+  productAnalytics: ProductAnalyticsData;
 }

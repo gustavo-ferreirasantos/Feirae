@@ -83,6 +83,14 @@ model Vendor {
   isFeatured     Boolean        @default(false)
   featuredUntil  DateTime?
   featuredOrder  Int            @default(0)
+  isCertifiedOrganic     Boolean   @default(false)
+  certificationDocUrl    String?
+  certStatus             String    @default("NONE") // NONE, PENDING, APPROVED, REJECTED
+  certRegistrationNumber String?
+  certIssuingBody        String?
+  certSubmittedAt        DateTime?
+  certReviewedAt         DateTime?
+  certRejectionReason    String?
   active         Boolean        @default(true)
   createdAt      DateTime       @default(now())
   updatedAt      DateTime       @updatedAt

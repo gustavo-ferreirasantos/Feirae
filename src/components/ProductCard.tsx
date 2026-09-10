@@ -9,7 +9,13 @@ import { formatCurrency } from '@/lib/utils';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
 
-export function ProductCard({ product }: { product: Product }) {
+export function ProductCard({ 
+  product, 
+  vendorIsCertifiedOrganic 
+}: { 
+  product: Product; 
+  vendorIsCertifiedOrganic?: boolean; 
+}) {
   const { addItem, items } = useCart();
   const { currentUser } = useUser();
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -62,8 +68,13 @@ export function ProductCard({ product }: { product: Product }) {
         {/* Category, Organic & Weighable Badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
           {product.isOrganic && (
-            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-600 text-white shadow-xs">
-              <Leaf className="w-3 h-3" /> Orgânico
+            <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shadow-xs ${
+              vendorIsCertifiedOrganic
+                ? 'bg-emerald-700 text-white border border-emerald-400/40'
+                : 'bg-emerald-600 text-white'
+            }`}>
+              <Leaf className="w-3 h-3" />
+              {vendorIsCertifiedOrganic ? '🌿 Orgânico Certificado' : 'Orgânico'}
             </span>
           )}
           {product.isWeighable && (

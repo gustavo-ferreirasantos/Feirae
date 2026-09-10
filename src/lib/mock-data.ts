@@ -34,6 +34,14 @@ export const INITIAL_USERS: User[] = [
     role: 'VENDOR',
   },
   {
+    id: 'user-vendor-4',
+    name: 'Cláudio do Pastel',
+    email: 'claudio.pastel@feirae.com',
+    phone: '(87) 99801-8279',
+    whatsappPhone: '(87) 99801-8279',
+    role: 'VENDOR',
+  },
+  {
     id: 'user-admin-1',
     name: 'Administração Feira Livre Central',
     email: 'admin@feirae.com',
@@ -63,6 +71,13 @@ export const INITIAL_VENDORS: Vendor[] = [
     isFeatured: true,
     featuredUntil: new Date(Date.now() + 86400000 * 14).toISOString(),
     featuredOrder: 1,
+    isCertifiedOrganic: true,
+    certStatus: 'APPROVED',
+    certRegistrationNumber: 'ORG-BR-2024-8841',
+    certIssuingBody: 'Ecocert Brasil / MAPA',
+    certificationDocUrl: 'https://images.unsplash.com/photo-1589829545856-d10d557cf95f?auto=format&fit=crop&w=1200&q=80',
+    certSubmittedAt: '2024-01-10T10:00:00.000Z',
+    certReviewedAt: '2024-01-11T14:30:00.000Z',
     active: true,
   },
   {
@@ -82,6 +97,8 @@ export const INITIAL_VENDORS: Vendor[] = [
     isSubscriber: false,
     commissionRate: 0.05,
     isFeatured: false,
+    isCertifiedOrganic: false,
+    certStatus: 'NONE',
     active: true,
   },
   {
@@ -103,6 +120,31 @@ export const INITIAL_VENDORS: Vendor[] = [
     isFeatured: true,
     featuredUntil: new Date(Date.now() + 86400000 * 7).toISOString(),
     featuredOrder: 2,
+    isCertifiedOrganic: false,
+    certStatus: 'PENDING',
+    certRegistrationNumber: 'SISORG-MG-55219',
+    certIssuingBody: 'Rede de Agroecologia Ecovida',
+    certificationDocUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?auto=format&fit=crop&w=1200&q=80',
+    certSubmittedAt: '2024-03-01T15:20:00.000Z',
+    active: true,
+  },
+  {
+    id: 'vendor-4',
+    userId: 'user-vendor-4',
+    businessName: 'Pastelaria & Caldo de Cana da Matriz',
+    slug: 'pastelaria-caldo-de-cana',
+    description: 'Pastéis crocantes tradicionais fritos na hora e caldo de cana puro moído no dia da feira.',
+    category: 'Salgados & Lanches',
+    fairLocation: 'Feira Livre da Praça da Matriz - Barraca 35',
+    boothNumber: 'B-35',
+    whatsappPhone: '(87) 99801-8279',
+    coverImage: 'https://images.unsplash.com/photo-1565299585323-38d6b0865b47?auto=format&fit=crop&w=1200&q=80',
+    avatar: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80',
+    rating: 4.7,
+    ratingCount: 12,
+    isSubscriber: false,
+    commissionRate: 0.05,
+    isFeatured: false,
     active: true,
   },
 ];
@@ -255,6 +297,21 @@ export const INITIAL_PRODUCTS: Product[] = [
     imageUrl: 'https://images.unsplash.com/photo-1541781774459-bb2af2f05b55?auto=format&fit=crop&w=600&q=80',
     isOrganic: false,
     isActive: true,
+  },
+  // Vendor 4 (Em ativação - 1 produto cadastrado)
+  {
+    id: 'prod-11',
+    vendorId: 'vendor-4',
+    vendorName: 'Pastelaria & Caldo de Cana da Matriz',
+    name: 'Pastel Especial de Carne com Queijo Canastra',
+    description: 'Pastel frito na hora com recheio farto e queijo artesanal.',
+    category: 'Salgados',
+    unit: 'unid',
+    price: 12.00,
+    stock: 25,
+    imageUrl: 'https://images.unsplash.com/photo-1541696432-82c6da8ce7bf?auto=format&fit=crop&w=600&q=80',
+    isOrganic: false,
+    isActive: true,
   }
 ];
 
@@ -397,7 +454,7 @@ export const INITIAL_ORDERS: Order[] = [
     pickupDate: 'Próximo Sábado (29/08)',
     pickupLocation: 'Barraca 22 - Praça da Matriz (08:00 - 11:00)',
     notes: 'Vou retirar por volta das 09h.',
-    createdAt: new Date(Date.now() - 3600000 * 12).toISOString(),
+    createdAt: new Date(Date.now() - 86400000 * 7).toISOString(),
     items: [
       {
         id: 'item-4',
@@ -426,7 +483,7 @@ export const INITIAL_ORDERS: Order[] = [
     paymentStatus: 'PAGO_NA_RETIRADA',
     pickupDate: 'Sábado Passado',
     pickupLocation: 'Barraca 08 - Praça da Matriz',
-    createdAt: new Date(Date.now() - 3600000 * 48).toISOString(),
+    createdAt: new Date(Date.now() - 86400000 * 14).toISOString(),
     items: [
       {
         id: 'item-5',
@@ -696,6 +753,36 @@ export const INITIAL_ORDERS: Order[] = [
         unitPrice: 5.00,
         quantity: 1,
         subtotal: 5.00,
+      }
+    ],
+  },
+  {
+    id: 'order-9',
+    orderNumber: 'FL-2026-009',
+    clientId: 'user-client-1',
+    clientName: 'Carlos Eduardo Mendes',
+    clientPhone: '(87) 99123-4567',
+    clientEmail: 'carlos.mendes@email.com',
+    vendorId: 'vendor-3',
+    vendorName: 'Queijaria Artesanal da Serra',
+    totalAmount: 43.50,
+    status: 'RETIRADO',
+    paymentMethod: 'MERCADO_PAGO_PIX',
+    paymentStatus: 'SIMULADO_APROVADO',
+    mpPaymentId: 'MP-SANDBOX-7788990',
+    pickupDate: '29/08/2026',
+    pickupLocation: 'Barraca 22 - Praça da Matriz',
+    createdAt: new Date(Date.now() - 86400000 * 8).toISOString(),
+    items: [
+      {
+        id: 'item-21',
+        orderId: 'order-9',
+        productId: 'prod-8',
+        productName: 'Queijo Meia Cura Canastra (Cerca de 600g)',
+        productUnit: 'peça',
+        unitPrice: 38.00,
+        quantity: 1,
+        subtotal: 38.00,
       }
     ],
   }

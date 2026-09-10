@@ -2,14 +2,18 @@
 
 import React from 'react';
 import Link from 'next/link';
-import { Store, MapPin, Award, ArrowRight, Sparkles } from 'lucide-react';
+import { Store, MapPin, Award, ArrowRight, Sparkles, Leaf } from 'lucide-react';
 import { Vendor } from '@/types';
 import { StarRating } from './StarRating';
 
 export function VendorCard({ vendor }: { vendor: Vendor }) {
+  const isOrganicCertified = vendor.isCertifiedOrganic && vendor.certStatus === 'APPROVED';
+
   return (
     <div className={`group bg-white rounded-2xl border transition-all overflow-hidden flex flex-col ${
-      vendor.isFeatured 
+      isOrganicCertified
+        ? 'border-emerald-300 shadow-emerald-500/5 hover:border-emerald-500 hover:shadow-md'
+        : vendor.isFeatured 
         ? 'border-amber-300 shadow-amber-500/10 hover:border-amber-400 hover:shadow-md' 
         : 'border-stone-200 hover:border-feira-400/80 shadow-xs hover:shadow-md'
     }`}>
@@ -24,17 +28,27 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
         ) : (
           <div className="w-full h-full bg-gradient-to-r from-feira-600 to-feira-800" />
         )}
-        {vendor.isFeatured ? (
-          <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 shadow-md flex items-center gap-1 z-10">
-            <Sparkles className="w-3 h-3 text-stone-950 fill-stone-950" />
-            Patrocinado
-          </span>
-        ) : (vendor.isSubscriber || vendor.plan === 'PRO') ? (
-          <span className="absolute top-2.5 left-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1 z-10">
-            <Award className="w-3 h-3 text-stone-900" />
-            Parceiro Pro
-          </span>
-        ) : null}
+
+        <div className="absolute top-2.5 left-2.5 flex flex-col gap-1 z-10">
+          {isOrganicCertified && (
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-600 text-white shadow-md flex items-center gap-1">
+              <Leaf className="w-3 h-3 text-emerald-200 fill-emerald-200" />
+              Orgânico Certificado
+            </span>
+          )}
+          {vendor.isFeatured ? (
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-gradient-to-r from-amber-400 to-amber-500 text-stone-950 shadow-md flex items-center gap-1">
+              <Sparkles className="w-3 h-3 text-stone-950 fill-stone-950" />
+              Patrocinado
+            </span>
+          ) : (vendor.isSubscriber || vendor.plan === 'PRO') ? (
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-400 text-stone-950 shadow-md flex items-center gap-1">
+              <Award className="w-3 h-3 text-stone-900" />
+              Parceiro Pro
+            </span>
+          ) : null}
+        </div>
+
         <span className="absolute top-2.5 right-2.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/90 text-stone-800 backdrop-blur-xs shadow-xs">
           {vendor.category}
         </span>
@@ -59,6 +73,12 @@ export function VendorCard({ vendor }: { vendor: Vendor }) {
             <div className="mt-1">
               <StarRating rating={vendor.rating} count={vendor.ratingCount} showText size="sm" />
             </div>
+            {isOrganicCertified && (
+              <div className="mt-1 inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                <Leaf className="w-2.5 h-2.5 text-emerald-600" />
+                <span>Selo Verificado {vendor.certIssuingBody ? `• ${vendor.certIssuingBody.split(' ')[0]}` : ''}</span>
+              </div>
+            )}
           </div>
         </div>
 
