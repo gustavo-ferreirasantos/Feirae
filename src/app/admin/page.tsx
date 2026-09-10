@@ -373,7 +373,7 @@ export default function AdminDashboardPage() {
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-purple-200 text-xs font-bold backdrop-blur-xs">
                 <BarChart3 className="w-3.5 h-3.5 text-purple-300" />
-                Product Analytics • US25
+                Product Analytics
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span>{periodLabel}</span>
               </div>
@@ -867,7 +867,7 @@ export default function AdminDashboardPage() {
             <div className="space-y-1.5">
               <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
                 <Sliders className="w-3.5 h-3.5 text-emerald-300" />
-                Simulador Financeiro • US26
+                Simulador Financeiro
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span>Projeções de GMV e Receita</span>
               </div>
@@ -1390,9 +1390,6 @@ export default function AdminDashboardPage() {
         >
           <BarChart3 className="w-4 h-4 text-purple-600" />
           Métricas de Produto (AARRR)
-          <span className="px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 text-[10px] font-extrabold">
-            US25
-          </span>
         </button>
 
         <button
@@ -1405,9 +1402,6 @@ export default function AdminDashboardPage() {
         >
           <Sliders className="w-4 h-4 text-emerald-600" />
           Simulador & GMV
-          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-            US26
-          </span>
         </button>
 
         <button
@@ -1452,9 +1446,6 @@ export default function AdminDashboardPage() {
         >
           <Leaf className="w-4 h-4 text-emerald-600" />
           Moderação de Selos
-          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
-            US27
-          </span>
           {pendingCertsCount > 0 && (
             <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold animate-pulse">
               {pendingCertsCount}
@@ -1910,7 +1901,7 @@ export default function AdminDashboardPage() {
               <div className="space-y-1.5">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
                   <Leaf className="w-3.5 h-3.5 text-emerald-300" />
-                  Homologação de Selos • US27
+                  Homologação de Selos
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Auditoria de Autenticidade Orgânica</span>
                 </div>

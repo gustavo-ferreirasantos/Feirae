@@ -1689,9 +1689,6 @@ export default function VendorDashboardPage() {
         >
           <Leaf className="w-4 h-4 text-emerald-600" />
           Certificações & Selo
-          <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-[10px] text-emerald-800 font-extrabold">
-            US27
-          </span>
           {currentVendor?.certStatus === 'APPROVED' && (
             <span className="w-2 h-2 rounded-full bg-emerald-500" title="Selo Orgânico Ativo" />
           )}
@@ -2737,7 +2734,7 @@ export default function VendorDashboardPage() {
               <div className="space-y-2">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
                   <Leaf className="w-3.5 h-3.5 text-emerald-300" />
-                  Auditoria Agroecológica • US27
+                  Auditoria Agroecológica
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                   <span>Selo de Autenticidade Verificada</span>
                 </div>
