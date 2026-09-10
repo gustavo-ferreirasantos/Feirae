@@ -179,3 +179,78 @@ export interface CartItem {
   product: Product;
   quantity: number;
 }
+
+export type PeriodFilter = '7d' | '30d' | 'all';
+
+export interface ProductFunnelMetrics {
+  showcaseViews: number;
+  cartAdditions: number;
+  ordersCreated: number;
+  ordersCompleted: number;
+  viewsToCartRate: number;
+  cartToOrderRate: number;
+  orderToCompletedRate: number;
+  overallConversionRate: number;
+}
+
+export interface VendorActivationItem {
+  id: string;
+  businessName: string;
+  category: string;
+  activeProductsCount: number;
+  isActivated: boolean;
+}
+
+export interface VendorActivationMetrics {
+  totalVendors: number;
+  activatedVendors: number;
+  pendingVendors: number;
+  activationRate: number;
+  vendorsBreakdown: VendorActivationItem[];
+}
+
+export interface CustomerRetentionItem {
+  name: string;
+  email: string;
+  ordersCount: number;
+  differentDatesCount: number;
+  hasConsecutiveWeeks: boolean;
+  consecutiveWeeksCount: number;
+  lastOrderDate: string;
+  weeksActive: string[];
+}
+
+export interface CustomerRetentionMetrics {
+  totalCustomers: number;
+  repeatCustomersCount: number;
+  consecutiveWeeksCustomersCount: number;
+  retentionRate: number;
+  consecutiveRetentionRate: number;
+  customers: CustomerRetentionItem[];
+}
+
+export interface ProductAnalyticsData {
+  period: PeriodFilter;
+  funnel: ProductFunnelMetrics;
+  activation: VendorActivationMetrics;
+  retention: CustomerRetentionMetrics;
+}
+
+export interface AdminStats {
+  activeVendors: number;
+  totalProducts?: number;
+  totalOrders: number;
+  totalGMV: number;
+  subscribersCount: number;
+  featuredVendorsCount: number;
+  sponsorshipRevenue: number;
+  totalMonetizationEstimate: number;
+  ordersByStatus: {
+    novo: number;
+    em_preparo: number;
+    pronto: number;
+    retirado: number;
+    cancelado: number;
+  };
+  productAnalytics: ProductAnalyticsData;
+}

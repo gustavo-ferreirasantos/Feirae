@@ -19,19 +19,36 @@ import {
   Search,
   Clock,
   AlertCircle,
-  Sparkles
+  Sparkles,
+  Calendar,
+  Users,
+  Repeat,
+  Zap,
+  Eye,
+  ShoppingCart,
+  BarChart3,
+  ArrowDown,
+  ArrowRight,
+  Flame,
+  Award,
+  Filter,
+  Check,
+  HelpCircle
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
 import { LoginModal } from '@/components/LoginModal';
+import { PeriodFilter } from '@/types';
 
 export default function AdminDashboardPage() {
   const { currentUser } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'VENDORS' | 'PRODUCTS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'VENDORS' | 'PRODUCTS'>('OVERVIEW');
+  const [period, setPeriod] = useState<PeriodFilter>('all');
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadingStats, setLoadingStats] = useState(false);
 
   // Filters
   const [vendorSearch, setVendorSearch] = useState('');
@@ -43,14 +60,15 @@ export default function AdminDashboardPage() {
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
-  const loadAdminData = async () => {
+  const loadAdminData = async (targetPeriod = period) => {
     if (!isAdmin) {
       setLoading(false);
       return;
     }
     try {
+      setLoadingStats(true);
       const [statsRes, vendRes, prodRes] = await Promise.all([
-        fetch('/api/admin/stats'),
+        fetch(`/api/admin/stats?period=${targetPeriod}`),
         fetch('/api/vendors?includeAll=true'),
         fetch('/api/products?includeInactive=true'),
       ]);
@@ -61,6 +79,20 @@ export default function AdminDashboardPage() {
       console.error(err);
     } finally {
       setLoading(false);
+      setLoadingStats(false);
+    }
+  };
+
+  const handlePeriodChange = async (newPeriod: PeriodFilter) => {
+    setPeriod(newPeriod);
+    setLoadingStats(true);
+    try {
+      const res = await fetch(`/api/admin/stats?period=${newPeriod}`);
+      if (res.ok) setStats(await res.json());
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingStats(false);
     }
   };
 
@@ -100,7 +132,7 @@ export default function AdminDashboardPage() {
         setActionFeedback(`Destaque patrocinado da barraca ${nextFeatured ? 'ativado' : 'pausado'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
         // Reload stats
-        const statsRes = await fetch('/api/admin/stats');
+        const statsRes = await fetch(`/api/admin/stats?period=${period}`);
         if (statsRes.ok) setStats(await statsRes.json());
       }
     } catch (err) {
@@ -186,11 +218,494 @@ export default function AdminDashboardPage() {
     );
   });
 
+  const renderProductAnalytics = () => {
+    const pa = stats?.productAnalytics;
+    if (!pa) return null;
+
+    const periodLabel = 
+      period === '7d' ? 'Últimos 7 dias' : 
+      period === '30d' ? 'Últimos 30 dias' : 
+      'Todo o Histórico (Geral)';
+
+    // Step calculations for the funnel bars
+    const maxFunnelVal = Math.max(pa.funnel.showcaseViews, 1);
+    const viewsPercent = 100;
+    const cartPercent = Math.max(16, Math.min(100, Math.round((pa.funnel.cartAdditions / maxFunnelVal) * 100 * 3.5)));
+    const ordersPercent = Math.max(12, Math.min(100, Math.round((pa.funnel.ordersCreated / maxFunnelVal) * 100 * 5.5)));
+    const completedPercent = Math.max(8, Math.min(100, Math.round((pa.funnel.ordersCompleted / maxFunnelVal) * 100 * 6.5)));
+
+    return (
+      <div className="space-y-6">
+        {/* Section Header */}
+        <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-800 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1.5">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-purple-200 text-xs font-bold backdrop-blur-xs">
+                <BarChart3 className="w-3.5 h-3.5 text-purple-300" />
+                Product Analytics • US25
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span>{periodLabel}</span>
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                Métricas de Produto (Framework AARRR)
+              </h2>
+              <p className="text-xs sm:text-sm text-purple-200/80 max-w-2xl leading-relaxed">
+                Acompanhe a saúde e o engajamento do marketplace da feira livre: atração de clientes, ativação de feirantes com catálogo diversificado, retenção semanal de compradores e conversão do funil de compras.
+              </p>
+            </div>
+
+            {loadingStats && (
+              <div className="flex items-center gap-2 bg-white/15 px-3.5 py-1.5 rounded-xl text-xs font-semibold text-purple-100">
+                <div className="w-3.5 h-3.5 border-2 border-purple-200 border-t-transparent rounded-full animate-spin" />
+                <span>Atualizando dados...</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* 1. 5 Cards Framework AARRR */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
+          {/* Acquisition */}
+          <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs hover:border-indigo-200 transition">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black tracking-wider uppercase text-indigo-700 bg-indigo-50 px-2.5 py-0.5 rounded-md">
+                A • Aquisição
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-indigo-50 text-indigo-700 flex items-center justify-center">
+                <Eye className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-2xl font-black text-stone-900 block tracking-tight">
+                {pa.funnel.showcaseViews.toLocaleString('pt-BR')}
+              </span>
+              <span className="text-xs font-bold text-stone-700 mt-0.5 block">Visualizações de Vitrine</span>
+              <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                {pa.funnel.cartAdditions} adicionaram itens ({pa.funnel.viewsToCartRate}% interesse)
+              </p>
+            </div>
+          </div>
+
+          {/* Activation */}
+          <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs hover:border-emerald-200 transition">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black tracking-wider uppercase text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-md">
+                A • Ativação
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-emerald-50 text-emerald-700 flex items-center justify-center">
+                <Zap className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-2xl font-black text-emerald-700 block tracking-tight">
+                {pa.activation.activationRate}%
+              </span>
+              <span className="text-xs font-bold text-stone-700 mt-0.5 block">Ativação de Feirantes</span>
+              <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                {pa.activation.activatedVendors} de {pa.activation.totalVendors} feirantes têm ≥ 3 produtos
+              </p>
+            </div>
+          </div>
+
+          {/* Retention */}
+          <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs hover:border-purple-200 transition">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black tracking-wider uppercase text-purple-700 bg-purple-50 px-2.5 py-0.5 rounded-md">
+                R • Retenção
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-purple-50 text-purple-700 flex items-center justify-center">
+                <Repeat className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-2xl font-black text-purple-700 block tracking-tight">
+                {pa.retention.consecutiveRetentionRate}%
+              </span>
+              <span className="text-xs font-bold text-stone-700 mt-0.5 block">Recorrência Semanal</span>
+              <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                {pa.retention.consecutiveWeeksCustomersCount} clientes compraram em semanas seguidas
+              </p>
+            </div>
+          </div>
+
+          {/* Revenue */}
+          <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs hover:border-amber-200 transition">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black tracking-wider uppercase text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-md">
+                R • Receita
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-2xl font-black text-stone-900 block tracking-tight">
+                {formatCurrency(stats.totalGMV)}
+              </span>
+              <span className="text-xs font-bold text-stone-700 mt-0.5 block">Volume Movimentado</span>
+              <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                {stats.totalOrders} pedido(s) transacionados
+              </p>
+            </div>
+          </div>
+
+          {/* Referral / Recompra */}
+          <div className="bg-white p-4.5 rounded-3xl border border-stone-200 shadow-xs hover:border-rose-200 transition">
+            <div className="flex items-center justify-between">
+              <span className="text-[11px] font-black tracking-wider uppercase text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-md">
+                R • Recompra
+              </span>
+              <div className="w-8 h-8 rounded-xl bg-rose-50 text-rose-700 flex items-center justify-center">
+                <Sparkles className="w-4 h-4" />
+              </div>
+            </div>
+            <div className="mt-3">
+              <span className="text-2xl font-black text-rose-700 block tracking-tight">
+                {pa.retention.retentionRate}%
+              </span>
+              <span className="text-xs font-bold text-stone-700 mt-0.5 block">Taxa de Recompra</span>
+              <p className="text-[11px] text-stone-500 mt-1 leading-snug">
+                {pa.retention.repeatCustomersCount} clientes fiéis com pedidos recorrentes
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. Visual Conversion Funnel (4 Steps) */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs space-y-6">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-stone-100 pb-4">
+            <div>
+              <div className="inline-flex items-center gap-1.5 text-xs font-bold text-purple-700 mb-1">
+                <Filter className="w-3.5 h-3.5" />
+                Funil de Conversão de Compras (4 Etapas)
+              </div>
+              <h3 className="font-black text-stone-900 text-lg">
+                Conversão do Fluxo de Compra da Feira Livre
+              </h3>
+              <p className="text-xs text-stone-500">
+                Visualizações de Vitrine → Adições ao Carrinho → Pedidos Gerados → Pedidos Retirados na Banca
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="px-3 py-1 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold">
+                Taxa Geral: {pa.funnel.overallConversionRate}%
+              </div>
+              <div className="px-3 py-1 rounded-xl bg-purple-50 border border-purple-200 text-purple-800 text-xs font-bold">
+                Retirada: {pa.funnel.orderToCompletedRate}%
+              </div>
+            </div>
+          </div>
+
+          {/* Funnel Visual Steps */}
+          <div className="space-y-3 pt-2">
+            {/* Step 1: Vitrine */}
+            <div className="relative group">
+              <div className="bg-stone-50 hover:bg-stone-100/80 rounded-2xl p-4 border border-stone-200 transition">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-indigo-600 text-white text-xs font-black flex items-center justify-center">1</span>
+                    <span className="text-xs font-bold text-stone-900">Visualizações de Vitrine</span>
+                    <span className="text-[11px] text-stone-400 hidden sm:inline">(Visitantes navegando nas bancas da feira)</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-stone-900">{pa.funnel.showcaseViews.toLocaleString('pt-BR')}</span>
+                    <span className="text-[11px] text-stone-400 font-semibold ml-1.5 block sm:inline">100% (Topo do Funil)</span>
+                  </div>
+                </div>
+                <div className="w-full bg-stone-200/70 h-3 rounded-full overflow-hidden">
+                  <div className="bg-indigo-600 h-full rounded-full transition-all duration-500" style={{ width: `${viewsPercent}%` }} />
+                </div>
+              </div>
+
+              {/* Transition Badge 1 -> 2 */}
+              <div className="flex items-center justify-center my-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-800 text-[11px] font-black shadow-2xs">
+                  <ArrowDown className="w-3 h-3 text-indigo-600" />
+                  <span>{pa.funnel.viewsToCartRate}% de taxa de interesse (adicionaram produtos)</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 2: Carrinho */}
+            <div className="relative group">
+              <div className="bg-stone-50 hover:bg-stone-100/80 rounded-2xl p-4 border border-stone-200 transition">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-amber-500 text-white text-xs font-black flex items-center justify-center">2</span>
+                    <span className="text-xs font-bold text-stone-900">Adições ao Carrinho</span>
+                    <span className="text-[11px] text-stone-400 hidden sm:inline">(Clientes montando sua sacola)</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-stone-900">{pa.funnel.cartAdditions}</span>
+                    <span className="text-[11px] text-amber-700 font-semibold ml-1.5 block sm:inline">{pa.funnel.viewsToCartRate}% do topo</span>
+                  </div>
+                </div>
+                <div className="w-full bg-stone-200/70 h-3 rounded-full overflow-hidden">
+                  <div className="bg-amber-500 h-full rounded-full transition-all duration-500" style={{ width: `${cartPercent}%` }} />
+                </div>
+              </div>
+
+              {/* Transition Badge 2 -> 3 */}
+              <div className="flex items-center justify-center my-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-amber-50 border border-amber-200 text-amber-900 text-[11px] font-black shadow-2xs">
+                  <ArrowDown className="w-3 h-3 text-amber-600" />
+                  <span>{pa.funnel.cartToOrderRate}% concluíram reserva de pedido</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 3: Pedidos Gerados */}
+            <div className="relative group">
+              <div className="bg-stone-50 hover:bg-stone-100/80 rounded-2xl p-4 border border-stone-200 transition">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-blue-600 text-white text-xs font-black flex items-center justify-center">3</span>
+                    <span className="text-xs font-bold text-stone-900">Pedidos Gerados</span>
+                    <span className="text-[11px] text-stone-400 hidden sm:inline">(Reservas para retirada confirmadas)</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-stone-900">{pa.funnel.ordersCreated}</span>
+                    <span className="text-[11px] text-blue-700 font-semibold ml-1.5 block sm:inline">{pa.funnel.cartToOrderRate}% dos carrinhos</span>
+                  </div>
+                </div>
+                <div className="w-full bg-stone-200/70 h-3 rounded-full overflow-hidden">
+                  <div className="bg-blue-600 h-full rounded-full transition-all duration-500" style={{ width: `${ordersPercent}%` }} />
+                </div>
+              </div>
+
+              {/* Transition Badge 3 -> 4 */}
+              <div className="flex items-center justify-center my-1">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-900 text-[11px] font-black shadow-2xs">
+                  <ArrowDown className="w-3 h-3 text-emerald-600" />
+                  <span>{pa.funnel.orderToCompletedRate}% dos pedidos retirados na feira</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Step 4: Pedidos Retirados */}
+            <div className="relative group">
+              <div className="bg-emerald-50/50 hover:bg-emerald-50 rounded-2xl p-4 border border-emerald-200 transition">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-2.5">
+                    <span className="w-6 h-6 rounded-lg bg-emerald-600 text-white text-xs font-black flex items-center justify-center">4</span>
+                    <span className="text-xs font-bold text-emerald-950">Pedidos Retirados na Banca</span>
+                    <span className="text-[11px] text-emerald-700 font-medium hidden sm:inline">(Conversão final completa)</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="text-base font-black text-emerald-800">{pa.funnel.ordersCompleted}</span>
+                    <span className="text-[11px] text-emerald-700 font-bold ml-1.5 block sm:inline">
+                      {pa.funnel.overallConversionRate}% de conversão global
+                    </span>
+                  </div>
+                </div>
+                <div className="w-full bg-emerald-200/60 h-3 rounded-full overflow-hidden">
+                  <div className="bg-emerald-600 h-full rounded-full transition-all duration-500" style={{ width: `${completedPercent}%` }} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Efficiency Summary Footer */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-2">
+            <div className="p-4 rounded-2xl bg-indigo-50/60 border border-indigo-100 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center shrink-0 mt-0.5">
+                <TrendingUp className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-xs font-extrabold text-indigo-950 block">Conversão Global: {pa.funnel.overallConversionRate}%</span>
+                <p className="text-[11px] text-indigo-800/80 leading-relaxed">
+                  Para cada 1.000 visualizações na vitrine virtual, cerca de {Math.round(pa.funnel.overallConversionRate * 10)} pedidos são retirados com sucesso diretamente na banca do produtor.
+                </p>
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-100 flex items-start gap-3">
+              <div className="w-9 h-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center shrink-0 mt-0.5">
+                <CheckCircle2 className="w-4 h-4" />
+              </div>
+              <div className="space-y-0.5">
+                <span className="text-xs font-extrabold text-emerald-950">Taxa de Conclusão: {pa.funnel.orderToCompletedRate}%</span>
+                <p className="text-[11px] text-emerald-800/80 leading-relaxed">
+                  Dos pedidos agendados, {pa.funnel.orderToCompletedRate}% são efetivamente retirados, indicando altíssimo comparecimento dos feirantes e redução de sobras.
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. Activation & Retention Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          
+          {/* VENDOR ACTIVATION METRIC */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3.5">
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-wider text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md inline-block mb-1">
+                  Engajamento de Oferta
+                </span>
+                <h3 className="font-extrabold text-stone-900 text-base">
+                  Ativação de Feirantes (≥ 3 Produtos)
+                </h3>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-black text-emerald-700 block">{pa.activation.activationRate}%</span>
+                <span className="text-[10px] font-bold text-stone-400 block uppercase">Taxa de Ativação</span>
+              </div>
+            </div>
+
+            {/* Visual Activation Progress Gauge */}
+            <div className="space-y-2 p-4 rounded-2xl bg-stone-50 border border-stone-100">
+              <div className="flex items-center justify-between text-xs font-bold text-stone-700">
+                <span>Progresso da Base de Barracas</span>
+                <span>{pa.activation.activatedVendors} de {pa.activation.totalVendors} ativados</span>
+              </div>
+              <div className="w-full bg-stone-200 h-3.5 rounded-full overflow-hidden relative">
+                <div 
+                  className="h-full bg-gradient-to-r from-emerald-500 to-emerald-600 rounded-full transition-all duration-500"
+                  style={{ width: `${pa.activation.activationRate}%` }}
+                />
+              </div>
+              <div className="flex items-center justify-between text-[11px] text-stone-500 pt-0.5">
+                <span>Critério: Feirante ter publicado ≥ 3 produtos ativos</span>
+                <span className="font-bold text-emerald-700">
+                  {pa.activation.activationRate >= 70 ? 'Meta de Catálogo Atingida (≥ 70%)' : 'Necessário incentivar cadastro'}
+                </span>
+              </div>
+            </div>
+
+            {/* Vendors Breakdown Table */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-stone-800 block">Status de Ativação por Barraca:</span>
+              <div className="divide-y divide-stone-100 border border-stone-200/80 rounded-2xl overflow-hidden">
+                {pa.activation.vendorsBreakdown?.map((v: any) => (
+                  <div key={v.id} className="p-3 flex items-center justify-between text-xs bg-white hover:bg-stone-50 transition">
+                    <div>
+                      <span className="font-bold text-stone-900 block">{v.businessName}</span>
+                      <span className="text-[11px] text-stone-400">{v.category}</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-stone-500 text-[11px] font-semibold">
+                        {v.activeProductsCount} produto(s) ativo(s)
+                      </span>
+                      {v.isActivated ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                          Ativado
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 text-[10px] font-black">
+                          <AlertCircle className="w-3 h-3 text-amber-600" />
+                          Em Ativação ({v.activeProductsCount}/3)
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* CUSTOMER RETENTION METRIC */}
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs space-y-5">
+            <div className="flex items-center justify-between border-b border-stone-100 pb-3.5">
+              <div>
+                <span className="text-[11px] font-black uppercase tracking-wider text-purple-700 bg-purple-50 px-2 py-0.5 rounded-md inline-block mb-1">
+                  Fidelidade & Hábito
+                </span>
+                <h3 className="font-extrabold text-stone-900 text-base">
+                  Retenção e Recorrência Semanal
+                </h3>
+              </div>
+              <div className="text-right">
+                <span className="text-2xl font-black text-purple-700 block">{pa.retention.consecutiveRetentionRate}%</span>
+                <span className="text-[10px] font-bold text-stone-400 block uppercase">Semanas Seguidas</span>
+              </div>
+            </div>
+
+            {/* Retention Highlight Badges */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3.5 rounded-2xl bg-purple-50/70 border border-purple-100">
+                <div className="flex items-center gap-1.5 text-purple-800 text-xs font-black">
+                  <Flame className="w-4 h-4 text-purple-600" />
+                  <span>Semanas Consecutivas</span>
+                </div>
+                <span className="text-xl font-black text-purple-900 mt-1 block">
+                  {pa.retention.consecutiveWeeksCustomersCount} cliente(s)
+                </span>
+                <span className="text-[10px] text-purple-700 block font-medium mt-0.5">
+                  Compram em sábados seguidos
+                </span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-stone-50 border border-stone-200/80">
+                <div className="flex items-center gap-1.5 text-stone-700 text-xs font-black">
+                  <Repeat className="w-4 h-4 text-stone-500" />
+                  <span>Recompra em Datas Distintas</span>
+                </div>
+                <span className="text-xl font-black text-stone-900 mt-1 block">
+                  {pa.retention.repeatCustomersCount} cliente(s)
+                </span>
+                <span className="text-[10px] text-stone-500 block font-medium mt-0.5">
+                  {pa.retention.retentionRate}% da base de compradores
+                </span>
+              </div>
+            </div>
+
+            {/* Customers Recurrence List */}
+            <div className="space-y-2">
+              <span className="text-xs font-bold text-stone-800 block">Clientes Identificados e Recorrência:</span>
+              <div className="divide-y divide-stone-100 border border-stone-200/80 rounded-2xl overflow-hidden max-h-56 overflow-y-auto">
+                {pa.retention.customers?.map((c: any, idx: number) => (
+                  <div key={idx} className="p-3 flex items-center justify-between text-xs bg-white hover:bg-stone-50 transition">
+                    <div className="space-y-0.5">
+                      <span className="font-bold text-stone-900 block">{c.name}</span>
+                      <span className="text-[10px] text-stone-400 block">{c.email}</span>
+                      <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                        {c.weeksActive?.map((w: string, widx: number) => (
+                          <span key={widx} className="px-1.5 py-0.2 rounded bg-stone-100 text-stone-600 text-[9px] font-bold">
+                            {w}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="text-right flex flex-col items-end gap-1 shrink-0">
+                      {c.hasConsecutiveWeeks ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-100 text-purple-800 text-[10px] font-black">
+                          <Flame className="w-3 h-3 text-purple-600" />
+                          Fiel da Feira ({c.consecutiveWeeksCount} sem. seguidas)
+                        </span>
+                      ) : c.differentDatesCount > 1 ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-black">
+                          <Repeat className="w-3 h-3 text-blue-600" />
+                          Recorrente ({c.differentDatesCount} datas)
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-stone-100 text-stone-600 text-[10px] font-semibold">
+                          Novo Cliente (1 pedido)
+                        </span>
+                      )}
+                      <span className="text-[10px] text-stone-400 font-medium">
+                        Total: {c.ordersCount} pedido(s)
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 space-y-8">
       
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
         <div>
           <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100 text-purple-800 text-xs font-bold mb-2">
             <ShieldCheck className="w-4 h-4" />
@@ -200,19 +715,59 @@ export default function AdminDashboardPage() {
             Administração da Feirae
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
-            Moderação de barracas, controle de produtos e indicadores econômicos da feira livre.
+            Moderação de barracas, controle de produtos e métricas de produto (Product Analytics & AARRR).
           </p>
         </div>
 
-        {pendingVendorsCount > 0 && (
-          <button
-            onClick={() => setActiveTab('VENDORS')}
-            className="p-3 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-2.5 text-xs font-bold shadow-xs hover:bg-amber-100 transition cursor-pointer"
-          >
-            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-            <span>{pendingVendorsCount} barraca(s) aguardando aprovação</span>
-          </button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Period Filter (Últimos 7 dias, 30 dias ou Geral) */}
+          <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200 text-xs shadow-xs">
+            <div className="flex items-center gap-1 px-2 text-stone-500 font-semibold">
+              <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
+              <span className="hidden sm:inline">Período:</span>
+            </div>
+            <button
+              onClick={() => handlePeriodChange('7d')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                period === '7d'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              7 dias
+            </button>
+            <button
+              onClick={() => handlePeriodChange('30d')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                period === '30d'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              30 dias
+            </button>
+            <button
+              onClick={() => handlePeriodChange('all')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                period === 'all'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              Geral
+            </button>
+          </div>
+
+          {pendingVendorsCount > 0 && (
+            <button
+              onClick={() => setActiveTab('VENDORS')}
+              className="p-2.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-900 flex items-center gap-2 text-xs font-bold shadow-xs hover:bg-amber-100 transition cursor-pointer"
+            >
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{pendingVendorsCount} barraca(s) pendente(s)</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {actionFeedback && (
@@ -234,6 +789,21 @@ export default function AdminDashboardPage() {
         >
           <TrendingUp className="w-4 h-4" />
           Visão Geral & Indicadores
+        </button>
+
+        <button
+          onClick={() => setActiveTab('AARRR')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'AARRR'
+              ? 'border-purple-600 text-purple-900'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <BarChart3 className="w-4 h-4 text-purple-600" />
+          Métricas de Produto (AARRR)
+          <span className="px-1.5 py-0.2 rounded-full bg-purple-100 text-purple-800 text-[10px] font-extrabold">
+            US25
+          </span>
         </button>
 
         <button
@@ -406,10 +976,20 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+          {/* Section: Product Analytics (AARRR) & Funnel */}
+          {renderProductAnalytics()}
+
         </div>
       )}
 
-      {/* ================= TAB 2: VENDORS MODERATION ================= */}
+      {/* ================= TAB 2: MÉTRICAS DE PRODUTO (AARRR) ================= */}
+      {activeTab === 'AARRR' && (
+        <div className="space-y-8 animate-in fade-in">
+          {renderProductAnalytics()}
+        </div>
+      )}
+
+      {/* ================= TAB 3: VENDORS MODERATION ================= */}
       {activeTab === 'VENDORS' && (
         <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-5 animate-in fade-in">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

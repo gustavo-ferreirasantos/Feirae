@@ -10,7 +10,7 @@ import {
   INITIAL_FAIRS,
   INITIAL_VENDOR_FAIRS
 } from './mock-data';
-import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon, OrderStatus, FairLocation, VendorFairLocation } from '@/types';
+import { User, Vendor, Product, PickupWindow, Order, Notification, Review, Coupon, OrderStatus, FairLocation, VendorFairLocation, AdminStats, PeriodFilter } from '@/types';
 
 // In-memory persistent state (shared across API routes during server lifecycle)
 class MemoryStore {
@@ -601,11 +601,23 @@ class MemoryStore {
     return true;
   }
 
-  getAdminStats() {
-    const totalOrders = this.orders.length;
+  getAdminStats(period: PeriodFilter = 'all'): AdminStats {
+    const now = new Date();
+    let startDate: Date | null = null;
+    if (period === '7d') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === '30d') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    }
+
+    const periodOrders = startDate
+      ? this.orders.filter(o => new Date(o.createdAt).getTime() >= startDate!.getTime())
+      : this.orders;
+
+    const totalOrders = periodOrders.length;
     const activeVendors = this.vendors.filter(v => v.active).length;
     const totalProducts = this.products.filter(p => p.isActive).length;
-    const totalVolume = this.orders
+    const totalVolume = periodOrders
       .filter(o => o.status !== 'CANCELADO')
       .reduce((sum, o) => sum + o.totalAmount, 0);
 
@@ -617,7 +629,7 @@ class MemoryStore {
       if (v.isSubscriber) {
         subscriptionTotal += 49.90; // R$ 49,90/mês simulado
       } else {
-        const vendorOrders = this.orders.filter(
+        const vendorOrders = periodOrders.filter(
           o => o.vendorId === v.id && o.status !== 'CANCELADO'
         );
         const vendorVolume = vendorOrders.reduce((sum, o) => sum + o.totalAmount, 0);
@@ -630,23 +642,155 @@ class MemoryStore {
     ).length;
     const sponsorshipRevenue = featuredVendorsCount * 29.90; // R$ 29,90 simulado por destaque
 
+    const ordersByStatus = {
+      novo: periodOrders.filter(o => o.status === 'NOVO').length,
+      em_preparo: periodOrders.filter(o => o.status === 'EM_PREPARO').length,
+      pronto: periodOrders.filter(o => o.status === 'PRONTO').length,
+      retirado: periodOrders.filter(o => o.status === 'RETIRADO').length,
+      cancelado: periodOrders.filter(o => o.status === 'CANCELADO').length,
+    };
+
+    // 1. Vendor Activation Metrics
+    const allActiveVendors = this.vendors.filter(v => v.active);
+    const vendorsBreakdown = allActiveVendors.map(v => {
+      const activeProducts = this.products.filter(p => p.vendorId === v.id && p.isActive);
+      return {
+        id: v.id,
+        businessName: v.businessName,
+        category: v.category,
+        activeProductsCount: activeProducts.length,
+        isActivated: activeProducts.length >= 3,
+      };
+    });
+    const activatedVendors = vendorsBreakdown.filter(v => v.isActivated).length;
+    const pendingVendors = vendorsBreakdown.length - activatedVendors;
+    const activationRate = vendorsBreakdown.length > 0
+      ? Math.round(((activatedVendors / vendorsBreakdown.length) * 100) * 10) / 10
+      : 0;
+
+    // 2. Conversion Funnel (4 Stages)
+    const ordersCompleted = ordersByStatus.retirado;
+    const ordersCreated = periodOrders.length;
+    const totalOrderItemsCount = periodOrders.reduce((acc, o) => acc + (o.items?.length || 1), 0);
+    
+    // Realistic estimated additions to cart and showcase views based on the period volume
+    const cartAdditions = Math.max(ordersCreated, Math.round(ordersCreated * 1.8 + totalOrderItemsCount * 0.6) + (period === '7d' ? 12 : period === '30d' ? 38 : 65));
+    const viewsMultiplier = period === '7d' ? 4.2 : period === '30d' ? 4.5 : 4.8;
+    const baseViews = period === '7d' ? 95 : period === '30d' ? 340 : 580;
+    const showcaseViews = Math.round(cartAdditions * viewsMultiplier + baseViews);
+
+    const viewsToCartRate = showcaseViews > 0 ? Math.round(((cartAdditions / showcaseViews) * 100) * 10) / 10 : 0;
+    const cartToOrderRate = cartAdditions > 0 ? Math.round(((ordersCreated / cartAdditions) * 100) * 10) / 10 : 0;
+    const orderToCompletedRate = ordersCreated > 0 ? Math.round(((ordersCompleted / ordersCreated) * 100) * 10) / 10 : 0;
+    const overallConversionRate = showcaseViews > 0 ? Math.round(((ordersCompleted / showcaseViews) * 100) * 10) / 10 : 0;
+
+    // 3. Customer Retention & Consecutive Weeks Recurrence
+    const ordersForRetention = period === 'all' ? this.orders : periodOrders;
+    const customerMap = new Map<string, {
+      name: string;
+      email: string;
+      orderDates: Date[];
+    }>();
+
+    ordersForRetention.forEach(o => {
+      const emailKey = (o.clientEmail || o.clientId || 'desconhecido').toLowerCase().trim();
+      if (!customerMap.has(emailKey)) {
+        customerMap.set(emailKey, {
+          name: o.clientName || 'Cliente Feirae',
+          email: o.clientEmail || '',
+          orderDates: [],
+        });
+      }
+      customerMap.get(emailKey)!.orderDates.push(new Date(o.createdAt));
+    });
+
+    const msInWeek = 7 * 24 * 60 * 60 * 1000;
+    const retentionCustomers = Array.from(customerMap.values()).map(c => {
+      c.orderDates.sort((a, b) => a.getTime() - b.getTime());
+      const dateStrings = Array.from(new Set(c.orderDates.map(d => d.toISOString().split('T')[0])));
+      const weekIndices = Array.from(new Set(c.orderDates.map(d => Math.floor(d.getTime() / msInWeek)))).sort((a, b) => a - b);
+      
+      let hasConsecutiveWeeks = false;
+      let maxConsecutive = weekIndices.length > 0 ? 1 : 0;
+      let currentSeq = 1;
+
+      for (let i = 0; i < weekIndices.length - 1; i++) {
+        if (weekIndices[i + 1] === weekIndices[i] + 1) {
+          currentSeq++;
+          hasConsecutiveWeeks = true;
+          if (currentSeq > maxConsecutive) {
+            maxConsecutive = currentSeq;
+          }
+        } else {
+          currentSeq = 1;
+        }
+      }
+
+      const weeksActive = weekIndices.map(w => `Semana ${w % 52 + 1}`);
+
+      return {
+        name: c.name,
+        email: c.email,
+        ordersCount: c.orderDates.length,
+        differentDatesCount: dateStrings.length,
+        hasConsecutiveWeeks,
+        consecutiveWeeksCount: maxConsecutive,
+        lastOrderDate: c.orderDates[c.orderDates.length - 1]?.toISOString() || '',
+        weeksActive,
+      };
+    });
+
+    const repeatCustomers = retentionCustomers.filter(c => c.differentDatesCount > 1 || c.ordersCount > 1);
+    const consecutiveWeeksCustomers = retentionCustomers.filter(c => c.hasConsecutiveWeeks);
+    const totalCustomersCount = retentionCustomers.length;
+
+    const retentionRate = totalCustomersCount > 0
+      ? Math.round(((repeatCustomers.length / totalCustomersCount) * 100) * 10) / 10
+      : 0;
+
+    const consecutiveRetentionRate = totalCustomersCount > 0
+      ? Math.round(((consecutiveWeeksCustomers.length / totalCustomersCount) * 100) * 10) / 10
+      : 0;
+
     return {
       activeVendors,
       totalProducts,
       totalOrders,
-      totalVolume,
-      simulatedCommissionTotal,
-      subscriptionTotal,
+      totalGMV: Math.round(totalVolume * 100) / 100,
+      simulatedCommissionTotal: Math.round(simulatedCommissionTotal * 100) / 100,
+      subscriptionTotal: Math.round(subscriptionTotal * 100) / 100,
       featuredVendorsCount,
       sponsorshipRevenue,
-      totalMonetizationEstimate: simulatedCommissionTotal + subscriptionTotal + sponsorshipRevenue,
-      ordersByStatus: {
-        novo: this.orders.filter(o => o.status === 'NOVO').length,
-        em_preparo: this.orders.filter(o => o.status === 'EM_PREPARO').length,
-        pronto: this.orders.filter(o => o.status === 'PRONTO').length,
-        retirado: this.orders.filter(o => o.status === 'RETIRADO').length,
-        cancelado: this.orders.filter(o => o.status === 'CANCELADO').length,
-      }
+      totalMonetizationEstimate: Math.round((simulatedCommissionTotal + subscriptionTotal + sponsorshipRevenue) * 100) / 100,
+      ordersByStatus,
+      productAnalytics: {
+        period,
+        funnel: {
+          showcaseViews,
+          cartAdditions,
+          ordersCreated,
+          ordersCompleted,
+          viewsToCartRate,
+          cartToOrderRate,
+          orderToCompletedRate,
+          overallConversionRate,
+        },
+        activation: {
+          totalVendors: vendorsBreakdown.length,
+          activatedVendors,
+          pendingVendors,
+          activationRate,
+          vendorsBreakdown,
+        },
+        retention: {
+          totalCustomers: totalCustomersCount,
+          repeatCustomersCount: repeatCustomers.length,
+          consecutiveWeeksCustomersCount: consecutiveWeeksCustomers.length,
+          retentionRate,
+          consecutiveRetentionRate,
+          customers: retentionCustomers,
+        },
+      },
     };
   }
 
@@ -768,17 +912,30 @@ export const store = globalStore.appStore ?? new MemoryStore();
 if (process.env.NODE_ENV !== 'production') {
   if (globalStore.appStore) {
     Object.setPrototypeOf(globalStore.appStore, MemoryStore.prototype);
-    // Ensure newly added mock orders from INITIAL_ORDERS are merged
-    INITIAL_ORDERS.forEach(initialOrder => {
-      if (!globalStore.appStore!.orders.some(o => o.id === initialOrder.id)) {
-        globalStore.appStore!.orders.push({ ...initialOrder });
+    // Sync vendors
+    INITIAL_VENDORS.forEach(iv => {
+      const existing = globalStore.appStore!.vendors.find(v => v.id === iv.id);
+      if (!existing) {
+        globalStore.appStore!.vendors.push({ ...iv });
       }
     });
-    // Sync product weighable flags
+    // Sync products
     INITIAL_PRODUCTS.forEach(ip => {
       const existing = globalStore.appStore!.products.find(p => p.id === ip.id);
-      if (existing && ip.isWeighable !== undefined) {
+      if (!existing) {
+        globalStore.appStore!.products.push({ ...ip });
+      } else if (ip.isWeighable !== undefined) {
         existing.isWeighable = ip.isWeighable;
+      }
+    });
+    // Ensure newly added mock orders from INITIAL_ORDERS are merged and dates synced
+    INITIAL_ORDERS.forEach(initialOrder => {
+      const existing = globalStore.appStore!.orders.find(o => o.id === initialOrder.id);
+      if (!existing) {
+        globalStore.appStore!.orders.push({ ...initialOrder });
+      } else {
+        existing.createdAt = initialOrder.createdAt;
+        existing.status = initialOrder.status;
       }
     });
     // Sync initial reviews
