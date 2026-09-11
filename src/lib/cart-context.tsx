@@ -1,7 +1,12 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
 import { CartItem, Product } from '@/types';
+import { useUser } from './user-context';
+
+function cartKeyFor(userId?: string | null) {
+  return `feirae_cart_${userId || 'guest'}`;
+}
 
 interface CartContextType {
   items: CartItem[];
@@ -18,33 +23,39 @@ interface CartContextType {
 const CartContext = createContext<CartContextType | undefined>(undefined);
 
 export function CartProvider({ children }: { children: React.ReactNode }) {
+  const { currentUser, isLoaded: userLoaded } = useUser();
   const [items, setItems] = useState<CartItem[]>([]);
   const [vendorId, setVendorId] = useState<string | null>(null);
   const [vendorName, setVendorName] = useState<string | null>(null);
+  const activeCartKey = useRef<string | null>(null);
 
-  // Load cart from localStorage on mount
+  // Load the cart belonging to the active user whenever login/logout/switch happens
   useEffect(() => {
+    if (!userLoaded) return;
+    const key = cartKeyFor(currentUser?.id);
+    activeCartKey.current = key;
     try {
-      const saved = localStorage.getItem('feirae_cart');
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        setItems(parsed.items || []);
-        setVendorId(parsed.vendorId || null);
-        setVendorName(parsed.vendorName || null);
-      }
+      const saved = localStorage.getItem(key);
+      const parsed = saved ? JSON.parse(saved) : null;
+      setItems(parsed?.items || []);
+      setVendorId(parsed?.vendorId || null);
+      setVendorName(parsed?.vendorName || null);
+    } catch {
+      setItems([]);
+      setVendorId(null);
+      setVendorName(null);
+    }
+  }, [userLoaded, currentUser?.id]);
+
+  // Save cart to the active user's own localStorage slot on changes
+  useEffect(() => {
+    if (!userLoaded || !activeCartKey.current) return;
+    try {
+      localStorage.setItem(activeCartKey.current, JSON.stringify({ items, vendorId, vendorName }));
     } catch {
       // ignore
     }
-  }, []);
-
-  // Save cart to localStorage on changes
-  useEffect(() => {
-    try {
-      localStorage.setItem('feirae_cart', JSON.stringify({ items, vendorId, vendorName }));
-    } catch {
-      // ignore
-    }
-  }, [items, vendorId, vendorName]);
+  }, [items, vendorId, vendorName, userLoaded]);
 
   const addItem = (product: Product, quantity: number = 1): { success: boolean; message?: string } => {
     // If cart contains items from a different vendor, prompt or reset
