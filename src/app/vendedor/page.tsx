@@ -167,6 +167,7 @@ export default function VendorDashboardPage() {
   const [replyText, setReplyText] = useState('');
   const [submittingReply, setSubmittingReply] = useState(false);
   const [replyFeedback, setReplyFeedback] = useState<string | null>(null);
+  const [reviewFilter, setReviewFilter] = useState<'ALL' | 'PENDING' | 'ANSWERED'>('ALL');
 
   const isVendor = currentUser?.role === 'VENDOR';
   const activeVendorId = currentVendor?.id || 'vendor-1';
@@ -731,6 +732,26 @@ export default function VendorDashboardPage() {
       alert('Erro de comunicação ao enviar resposta.');
     } finally {
       setSubmittingReply(false);
+    }
+  };
+
+  const handleDeleteReply = async (reviewId: string) => {
+    if (!confirm('Deseja realmente excluir sua resposta oficial a esta avaliação?')) return;
+    try {
+      const res = await fetch(`/api/reviews/${reviewId}/reply`, {
+        method: 'DELETE',
+      });
+      if (res.ok) {
+        setReviews(prev =>
+          prev.map(r => r.id === reviewId ? { ...r, vendorReply: null, vendorReplyAt: null } : r)
+        );
+        setReplyFeedback('Resposta oficial removida com sucesso.');
+        setTimeout(() => setReplyFeedback(null), 4000);
+      } else {
+        alert('Erro ao excluir resposta.');
+      }
+    } catch {
+      alert('Erro de conexão ao excluir resposta.');
     }
   };
 
@@ -1658,10 +1679,20 @@ export default function VendorDashboardPage() {
           }`}
         >
           <MessageSquare className="w-4 h-4" />
-          Avaliações dos Clientes
-          <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
-            {reviews.length}
-          </span>
+          Avaliações
+          {reviews.filter(r => !r.vendorReply).length > 0 ? (
+            <span
+              className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 text-[10px] font-extrabold flex items-center gap-1"
+              title={`${reviews.filter(r => !r.vendorReply).length} avaliação(ões) aguardando resposta`}
+            >
+              {reviews.length}
+              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+            </span>
+          ) : (
+            <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
+              {reviews.length}
+            </span>
+          )}
         </button>
 
         <button
@@ -2080,174 +2111,276 @@ export default function VendorDashboardPage() {
       )}
 
       {/* Tab 5: REVIEWS */}
-      {activeTab === 'REVIEWS' && (
-        <div className="space-y-5 animate-in fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-            <div>
-              <h2 className="text-lg font-bold text-stone-900">Avaliações e Comentários dos Clientes</h2>
-              <p className="text-xs text-stone-500">
-                Responda publicamente aos feedbacks dos clientes para fortalecer o vínculo na feira
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-900">
-                ★ {reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : '5.0'} / 5.0
-              </span>
-              <span className="text-xs text-stone-400 font-medium">
-                ({reviews.length} avaliações)
-              </span>
-            </div>
-          </div>
+      {activeTab === 'REVIEWS' && (() => {
+        const pendingCount = reviews.filter(r => !r.vendorReply).length;
+        const displayedReviews = reviews.filter(rev => {
+          if (reviewFilter === 'PENDING') return !rev.vendorReply;
+          if (reviewFilter === 'ANSWERED') return Boolean(rev.vendorReply);
+          return true;
+        });
 
-          {replyFeedback && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{replyFeedback}</span>
+        return (
+          <div className="space-y-5 animate-in fade-in">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-bold text-stone-900">Avaliações e Comentários</h2>
+                <p className="text-xs text-stone-500">
+                  Responda publicamente aos feedbacks dos clientes para agradecer elogios e fortalecer o relacionamento comunitário
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="px-3 py-1 rounded-full text-xs font-extrabold bg-amber-100 text-amber-900">
+                  ★ {reviews.length > 0 ? (reviews.reduce((acc, r) => acc + r.rating, 0) / reviews.length).toFixed(1) : '5.0'} / 5.0
+                </span>
+                <span className="text-xs text-stone-400 font-medium">
+                  ({reviews.length} avaliações)
+                </span>
+              </div>
             </div>
-          )}
 
-          {reviews.length === 0 ? (
-            <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 text-stone-400 space-y-2">
-              <Star className="w-10 h-10 stroke-1 mx-auto text-amber-400" />
-              <p className="font-semibold text-stone-700 text-sm">Nenhuma avaliação recebida ainda</p>
-              <p className="text-xs max-w-sm mx-auto">Conforme os clientes retirarem seus pedidos, as notas e comentários aparecerão aqui.</p>
+            {/* Filter Pills */}
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setReviewFilter('ALL')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  reviewFilter === 'ALL'
+                    ? 'bg-stone-900 text-white shadow-xs'
+                    : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                }`}
+              >
+                Todas ({reviews.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewFilter('PENDING')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 ${
+                  reviewFilter === 'PENDING'
+                    ? 'bg-amber-600 text-white shadow-xs'
+                    : 'bg-amber-50 text-amber-800 hover:bg-amber-100'
+                }`}
+              >
+                Pendentes de Resposta ({pendingCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setReviewFilter('ANSWERED')}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                  reviewFilter === 'ANSWERED'
+                    ? 'bg-emerald-700 text-white shadow-xs'
+                    : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                }`}
+              >
+                Respondidas ({reviews.length - pendingCount})
+              </button>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {reviews.map(rev => {
-                const isReplyingThis = replyingReviewId === rev.id;
 
-                return (
-                  <div key={rev.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-3 flex flex-col justify-between">
-                    <div className="space-y-2.5">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2">
-                          <div className="w-8 h-8 rounded-full bg-feira-100 text-feira-800 font-bold text-xs flex items-center justify-center">
-                            {rev.clientName.charAt(0)}
+            {replyFeedback && (
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 flex items-center gap-2.5 text-xs font-semibold animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                <span>{replyFeedback}</span>
+              </div>
+            )}
+
+            {displayedReviews.length === 0 ? (
+              <div className="bg-white rounded-3xl p-12 text-center border border-stone-200 text-stone-400 space-y-2">
+                <Star className="w-10 h-10 stroke-1 mx-auto text-amber-400" />
+                <p className="font-semibold text-stone-700 text-sm">
+                  {reviewFilter === 'PENDING' 
+                    ? 'Nenhuma avaliação pendente de resposta!' 
+                    : reviewFilter === 'ANSWERED' 
+                    ? 'Nenhuma avaliação respondida ainda.' 
+                    : 'Nenhuma avaliação recebida ainda'}
+                </p>
+                <p className="text-xs max-w-sm mx-auto">
+                  {reviewFilter === 'PENDING'
+                    ? 'Parabéns! Todas as avaliações dos clientes já foram respondidas pela sua barraca.'
+                    : 'Conforme os clientes retirarem seus pedidos, as notas e comentários aparecerão aqui.'}
+                </p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {displayedReviews.map(rev => {
+                  const isReplyingThis = replyingReviewId === rev.id;
+
+                  return (
+                    <div key={rev.id} className="bg-white p-5 rounded-2xl border border-stone-200 shadow-xs space-y-3 flex flex-col justify-between">
+                      <div className="space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div className="w-8 h-8 rounded-full bg-feira-100 text-feira-800 font-bold text-xs flex items-center justify-center">
+                              {rev.clientName.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-bold text-stone-900 text-sm">{rev.clientName}</div>
+                              <span className="text-[10px] text-stone-400">{formatDate(rev.createdAt)}</span>
+                            </div>
                           </div>
-                          <div>
-                            <div className="font-bold text-stone-900 text-sm">{rev.clientName}</div>
-                            <span className="text-[10px] text-stone-400">{formatDate(rev.createdAt)}</span>
-                          </div>
+
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
+                            rev.vendorReply
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-amber-100 text-amber-800'
+                          }`}>
+                            {rev.vendorReply ? 'Respondida' : 'Pendente'}
+                          </span>
                         </div>
 
-                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold ${
-                          rev.vendorReply
-                            ? 'bg-emerald-100 text-emerald-800'
-                            : 'bg-amber-100 text-amber-800'
-                        }`}>
-                          {rev.vendorReply ? 'Respondida' : 'Pendente'}
-                        </span>
-                      </div>
+                        <div>
+                          <StarRating rating={rev.rating} size="sm" />
+                        </div>
 
-                      <div>
-                        <StarRating rating={rev.rating} size="sm" />
-                      </div>
-
-                      {rev.comment && (
-                        <p className="text-xs text-stone-600 bg-stone-50 p-3 rounded-xl border border-stone-100 italic leading-relaxed">
-                          "{rev.comment}"
-                        </p>
-                      )}
-
-                      {/* Official Vendor Reply View (when not editing) */}
-                      {!isReplyingThis && rev.vendorReply && (
-                        <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1.5 animate-in fade-in">
-                          <div className="flex items-center justify-between">
-                            <span className="font-extrabold text-emerald-900 text-[11px] flex items-center gap-1">
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                              Sua Resposta Oficial:
-                            </span>
-                            {rev.vendorReplyAt && (
-                              <span className="text-[10px] text-emerald-700 font-medium">
-                                {formatDate(rev.vendorReplyAt)}
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-stone-800 leading-relaxed pl-1">
-                            "{rev.vendorReply}"
+                        {rev.comment && (
+                          <p className="text-xs text-stone-600 bg-stone-50 p-3 rounded-xl border border-stone-100 italic leading-relaxed">
+                            "{rev.comment}"
                           </p>
-                        </div>
-                      )}
+                        )}
 
-                      {/* Reply Form (when replying or editing) */}
-                      {isReplyingThis && (
-                        <div className="space-y-2 pt-2 border-t border-stone-100 animate-in fade-in">
-                          <label className="text-[11px] font-bold text-stone-700 block">
-                            {rev.vendorReply ? 'Editar Resposta Oficial:' : 'Redigir Resposta Oficial:'}
-                          </label>
-                          <textarea
-                            rows={3}
-                            value={replyText}
-                            onChange={e => setReplyText(e.target.value)}
-                            placeholder="Agradeça pelo carinho, esclareça dúvidas ou convide para a próxima feira..."
-                            className="w-full text-xs p-3 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed"
-                          />
-                          <div className="flex items-center justify-end gap-2 pt-1">
-                            <button
-                              type="button"
-                              onClick={handleCancelReply}
-                              disabled={submittingReply}
-                              className="px-3 py-1.5 rounded-xl border border-stone-200 text-stone-600 font-semibold text-xs hover:bg-stone-50 cursor-pointer"
-                            >
-                              Cancelar
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleSubmitReply(rev.id)}
-                              disabled={submittingReply || !replyText.trim()}
-                              className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                            >
-                              {submittingReply ? (
-                                <>
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                                  <span>Salvando...</span>
-                                </>
-                              ) : (
-                                <>
-                                  <Send className="w-3.5 h-3.5" />
-                                  <span>{rev.vendorReply ? 'Atualizar Resposta' : 'Enviar Resposta'}</span>
-                                </>
+                        {/* Official Vendor Reply View (when not editing) */}
+                        {!isReplyingThis && rev.vendorReply && (
+                          <div className="p-3.5 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-1.5 animate-in fade-in">
+                            <div className="flex items-center justify-between">
+                              <span className="font-extrabold text-emerald-900 text-[11px] flex items-center gap-1">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Sua Resposta Oficial:
+                              </span>
+                              {rev.vendorReplyAt && (
+                                <span className="text-[10px] text-emerald-700 font-medium">
+                                  {formatDate(rev.vendorReplyAt)}
+                                </span>
                               )}
-                            </button>
+                            </div>
+                            <p className="text-stone-800 leading-relaxed pl-1">
+                              "{rev.vendorReply}"
+                            </p>
                           </div>
+                        )}
+
+                        {/* Reply Form (when replying or editing) */}
+                        {isReplyingThis && (
+                          <div className="space-y-2 pt-2 border-t border-stone-100 animate-in fade-in">
+                            <label className="text-[11px] font-bold text-stone-700 block">
+                              {rev.vendorReply ? 'Editar Resposta Oficial:' : 'Redigir Resposta Oficial:'}
+                            </label>
+
+                            {/* Quick Suggestion Chips */}
+                            <div className="flex flex-wrap items-center gap-1.5 pb-1">
+                              <span className="text-[10px] text-stone-400 font-semibold">Sugestões rápidas:</span>
+                              <button
+                                type="button"
+                                onClick={() => setReplyText('Muito obrigado pelo carinho e preferência! Esperamos você no próximo sábado!')}
+                                className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-medium transition cursor-pointer"
+                              >
+                                🙏 Agradecer visita
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReplyText('Que alegria saber que gostou! Nossos produtos são colhidos frescos especialmente para a feira.')}
+                                className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-medium transition cursor-pointer"
+                              >
+                                🥬 Elogio de frescor
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setReplyText('Agradecemos muito pelo feedback! É um prazer atender você na nossa banca.')}
+                                className="px-2 py-0.5 rounded-lg bg-stone-100 hover:bg-stone-200 text-stone-700 text-[10px] font-medium transition cursor-pointer"
+                              >
+                                🤝 Fortalecer vínculo
+                              </button>
+                            </div>
+
+                            <textarea
+                              rows={3}
+                              maxLength={500}
+                              value={replyText}
+                              onChange={e => setReplyText(e.target.value)}
+                              placeholder="Agradeça pelo carinho, esclareça dúvidas ou convide para a próxima feira..."
+                              className="w-full text-xs p-3 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-500 leading-relaxed"
+                            />
+                            <div className="flex items-center justify-between text-[10px] text-stone-400 px-1">
+                              <span>Mensagem pública visível para toda a vizinhança</span>
+                              <span className={replyText.length >= 480 ? 'text-amber-600 font-bold' : ''}>
+                                {replyText.length}/500
+                              </span>
+                            </div>
+
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                              <button
+                                type="button"
+                                onClick={handleCancelReply}
+                                disabled={submittingReply}
+                                className="px-3 py-1.5 rounded-xl border border-stone-200 text-stone-600 font-semibold text-xs hover:bg-stone-50 cursor-pointer"
+                              >
+                                Cancelar
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleSubmitReply(rev.id)}
+                                disabled={submittingReply || !replyText.trim()}
+                                className="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-xs flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                              >
+                                {submittingReply ? (
+                                  <>
+                                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    <span>Salvando...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Send className="w-3.5 h-3.5" />
+                                    <span>{rev.vendorReply ? 'Atualizar Resposta' : 'Enviar Resposta'}</span>
+                                  </>
+                                )}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Footer Actions (when not in edit mode) */}
+                      {!isReplyingThis && (
+                        <div className="pt-2 border-t border-stone-100 flex items-center justify-end gap-2">
+                          {rev.vendorReply && (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteReply(rev.id)}
+                              className="px-2.5 py-1.5 rounded-xl text-xs font-medium text-stone-400 hover:text-red-600 hover:bg-red-50 transition flex items-center gap-1 cursor-pointer"
+                              title="Excluir resposta oficial"
+                            >
+                              <Trash2 className="w-3 h-3" />
+                              Excluir
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => handleOpenReply(rev)}
+                            className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                              rev.vendorReply
+                                ? 'bg-stone-100 hover:bg-stone-200 text-stone-700'
+                                : 'bg-feira-600 hover:bg-feira-700 text-white shadow-xs'
+                            }`}
+                          >
+                            {rev.vendorReply ? (
+                              <>
+                                <Edit3 className="w-3 h-3" />
+                                Editar Resposta
+                              </>
+                            ) : (
+                              <>
+                                <MessageSquare className="w-3 h-3" />
+                                Responder Avaliação
+                              </>
+                            )}
+                          </button>
                         </div>
                       )}
                     </div>
-
-                    {/* Footer Actions (when not in edit mode) */}
-                    {!isReplyingThis && (
-                      <div className="pt-2 border-t border-stone-100 flex items-center justify-end">
-                        <button
-                          type="button"
-                          onClick={() => handleOpenReply(rev)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
-                            rev.vendorReply
-                              ? 'bg-stone-100 hover:bg-stone-200 text-stone-700'
-                              : 'bg-feira-600 hover:bg-feira-700 text-white shadow-xs'
-                          }`}
-                        >
-                          {rev.vendorReply ? (
-                            <>
-                              <Edit3 className="w-3 h-3" />
-                              Editar Resposta
-                            </>
-                          ) : (
-                            <>
-                              <MessageSquare className="w-3 h-3" />
-                              Responder Avaliação
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Tab 6: FINANCIAL & CLOSING (US20) */}
       {activeTab === 'FINANCIAL' && (

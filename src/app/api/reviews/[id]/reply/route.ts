@@ -25,7 +25,7 @@ export async function PATCH(
       });
 
       if (review) {
-        const updatedReview = await prisma.review.update({
+        const updatedReview = await (prisma.review as any).update({
           where: { id: params.id },
           data: {
             vendorReply: replyText,
@@ -63,5 +63,42 @@ export async function PATCH(
   } catch (err) {
     console.error('Error in PATCH /api/reviews/[id]/reply:', err);
     return NextResponse.json({ error: 'Erro ao enviar resposta à avaliação.' }, { status: 500 });
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { id: string } }
+) {
+  try {
+    try {
+      const existing = await prisma.review.findUnique({
+        where: { id: params.id },
+      });
+
+      if (existing) {
+        const updated = await (prisma.review as any).update({
+          where: { id: params.id },
+          data: {
+            vendorReply: null,
+            vendorReplyAt: null,
+          },
+        });
+        store.deleteReviewReply(params.id);
+        return NextResponse.json(updated);
+      }
+    } catch (dbErr) {
+      console.warn('Prisma delete review reply fallback:', dbErr);
+    }
+
+    const result = store.deleteReviewReply(params.id);
+    if ('error' in result) {
+      return NextResponse.json({ error: result.error }, { status: 404 });
+    }
+
+    return NextResponse.json(result);
+  } catch (err) {
+    console.error('Error in DELETE /api/reviews/[id]/reply:', err);
+    return NextResponse.json({ error: 'Erro ao excluir resposta.' }, { status: 500 });
   }
 }

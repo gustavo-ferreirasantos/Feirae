@@ -579,6 +579,24 @@ class MemoryStore {
     return review;
   }
 
+  deleteReviewReply(reviewId: string): Review | { error: string } {
+    const review = this.reviews.find(r => r.id === reviewId);
+    if (!review) {
+      return { error: 'Avaliação não encontrada.' };
+    }
+
+    review.vendorReply = undefined;
+    review.vendorReplyAt = undefined;
+
+    const order = this.orders.find(o => o.id === review.orderId);
+    if (order && order.review) {
+      order.review.vendorReply = undefined;
+      order.review.vendorReplyAt = undefined;
+    }
+
+    return review;
+  }
+
   getNotifications(userId: string): Notification[] {
     return this.notifications.filter(n => n.userId === userId);
   }
