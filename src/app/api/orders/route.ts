@@ -70,8 +70,8 @@ export async function POST(request: Request) {
             }, { status: 400 });
           }
 
-          const subtotal = product.price * it.quantity;
-          calculatedTotal += subtotal;
+          const subtotal = Math.round((product.price * it.quantity) * 100) / 100;
+          calculatedTotal = Math.round((calculatedTotal + subtotal) * 100) / 100;
           itemsToCreate.push({
             productId: product.id,
             productName: product.name,

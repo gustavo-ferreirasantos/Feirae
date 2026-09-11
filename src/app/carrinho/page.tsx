@@ -23,7 +23,7 @@ import {
 } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, formatWeight } from '@/lib/utils';
 import { PickupWindow } from '@/types';
 import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
@@ -258,73 +258,151 @@ export default function CartCheckoutPage() {
           </div>
 
           <div className="bg-white rounded-3xl border border-stone-200 shadow-xs overflow-hidden divide-y divide-stone-100">
-            {items.map(item => (
-              <div key={item.product.id} className="p-4 sm:p-5 flex items-center gap-4">
-                <div className="w-16 h-16 rounded-xl bg-stone-100 overflow-hidden shrink-0">
-                  {item.product.imageUrl ? (
-                    <img src={item.product.imageUrl} alt={item.product.name} className="w-full h-full object-cover" />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-stone-300">
-                      <Store className="w-6 h-6" />
+            {items.map(item => {
+              const isWeighable = Boolean(item.product.isWeighable);
+              const subtotal = Math.round((item.product.price * item.quantity) * 100) / 100;
+              return (
+                <div key={item.product.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="w-16 h-16 rounded-xl bg-stone-100 overflow-hidden shrink-0">
+                      {item.product.imageUrl ? (
+                        <img src={item.product.imageUrl} alt={item.product.name} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-stone-300">
+                          <Store className="w-6 h-6" />
+                        </div>
+                      )}
                     </div>
-                  )}
-                </div>
 
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <h4 className="text-sm font-bold text-stone-900 truncate">
-                      {item.product.name}
-                    </h4>
-                    {item.product.isWeighable && (
-                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                        <Scale className="w-3 h-3 text-amber-700" /> Vendido por peso
-                      </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <h4 className="text-sm font-bold text-stone-900 truncate">
+                          {item.product.name}
+                        </h4>
+                        {isWeighable && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                            <Scale className="w-3 h-3 text-amber-700" /> Vendido por peso
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-xs text-stone-500 mt-0.5">
+                        {formatCurrency(item.product.price)} /{item.product.unit}
+                      </div>
+                      <div className="text-xs font-bold text-feira-700 mt-1">
+                        {isWeighable ? (
+                          <div>
+                            <span>Estimativa: {formatCurrency(subtotal)}</span>
+                            <span className="text-[11px] text-stone-500 font-normal ml-1">
+                              ({formatWeight(item.quantity)} x {formatCurrency(item.product.price)}/{item.product.unit})
+                            </span>
+                            <span className="text-[10px] font-medium text-amber-700 block mt-0.5">
+                              *Valor final ajustado após pesagem na balança na retirada
+                            </span>
+                          </div>
+                        ) : (
+                          <span>Subtotal: {formatCurrency(subtotal)}</span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Quantity and Actions */}
+                  <div className="flex flex-col items-end sm:items-center gap-2 shrink-0">
+                    <div className="flex items-center gap-2">
+                      {isWeighable ? (
+                        <div className="flex items-center border border-amber-200 rounded-xl bg-amber-50/60 p-1">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextQty = Number((item.quantity - 0.1).toFixed(3));
+                              if (nextQty <= 0.05) {
+                                removeItem(item.product.id);
+                              } else {
+                                updateQuantity(item.product.id, nextQty);
+                              }
+                            }}
+                            className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-amber-100 transition cursor-pointer"
+                            title="Diminuir 100g"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="px-2 text-xs font-extrabold text-stone-900 min-w-[50px] text-center font-mono">
+                            {formatWeight(item.quantity)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextQty = Number((item.quantity + 0.1).toFixed(3));
+                              updateQuantity(item.product.id, Math.min(item.product.stock, nextQty));
+                            }}
+                            disabled={item.quantity >= item.product.stock}
+                            className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-amber-100 transition disabled:opacity-30 cursor-pointer"
+                            title="Aumentar 100g"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center border border-stone-200 rounded-xl bg-stone-50 p-1">
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
+                            className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition cursor-pointer"
+                          >
+                            <Minus className="w-3.5 h-3.5" />
+                          </button>
+                          <span className="px-2 text-xs font-bold text-stone-800 min-w-[24px] text-center">
+                            {item.quantity}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
+                            disabled={item.quantity >= item.product.stock}
+                            className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition disabled:opacity-30 cursor-pointer"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={() => removeItem(item.product.id)}
+                        className="p-2 text-stone-400 hover:text-red-600 transition rounded-xl hover:bg-red-50 cursor-pointer"
+                        title="Remover item"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {/* Quick presets for weighable item */}
+                    {isWeighable && (
+                      <div className="flex items-center gap-1">
+                        {[0.25, 0.5, 0.75, 1.0, 1.5].map(preset => {
+                          const isCurrent = Math.abs(item.quantity - preset) < 0.01;
+                          const isOver = preset > item.product.stock;
+                          return (
+                            <button
+                              key={preset}
+                              type="button"
+                              disabled={isOver}
+                              onClick={() => updateQuantity(item.product.id, preset)}
+                              className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition cursor-pointer ${
+                                isCurrent
+                                  ? 'bg-amber-600 text-white shadow-2xs'
+                                  : 'bg-stone-100 text-stone-600 hover:bg-stone-200'
+                              } disabled:opacity-25 disabled:cursor-not-allowed`}
+                            >
+                              {formatWeight(preset)}
+                            </button>
+                          );
+                        })}
+                      </div>
                     )}
                   </div>
-                  <div className="text-xs text-stone-500 mt-0.5">
-                    {formatCurrency(item.product.price)} /{item.product.unit}
-                  </div>
-                  <div className="text-xs font-bold text-feira-700 mt-1">
-                    {item.product.isWeighable ? 'Estimativa: ' : 'Subtotal: '}
-                    {formatCurrency(item.product.price * item.quantity)}
-                    {item.product.isWeighable && (
-                      <span className="text-[10px] font-medium text-amber-700 block mt-0.5">
-                        *Valor final ajustado após pesagem na balança na retirada
-                      </span>
-                    )}
-                  </div>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center border border-stone-200 rounded-xl bg-stone-50 p-1">
-                    <button
-                      onClick={() => updateQuantity(item.product.id, item.quantity - 1)}
-                      className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition"
-                    >
-                      <Minus className="w-3.5 h-3.5" />
-                    </button>
-                    <span className="px-2 text-xs font-bold text-stone-800 min-w-[24px] text-center">
-                      {item.quantity}
-                    </span>
-                    <button
-                      onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
-                      disabled={item.quantity >= item.product.stock}
-                      className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition disabled:opacity-30"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-
-                  <button
-                    onClick={() => removeItem(item.product.id)}
-                    className="p-2 text-stone-400 hover:text-red-600 transition rounded-xl hover:bg-red-50"
-                    title="Remover item"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
 
@@ -521,7 +599,7 @@ export default function CartCheckoutPage() {
 
             <div className="pt-4 border-t border-stone-100 space-y-2">
               <div className="flex justify-between text-xs text-stone-500">
-                <span>Subtotal de itens:</span>
+                <span>{items.some(i => i.product.isWeighable) ? 'Subtotal estimado de itens:' : 'Subtotal de itens:'}</span>
                 <span>{formatCurrency(totalAmount)}</span>
               </div>
               {appliedCoupon && (
@@ -535,7 +613,14 @@ export default function CartCheckoutPage() {
                 <span className="text-emerald-600 font-semibold">Grátis (Demonstrativo)</span>
               </div>
               <div className="flex justify-between text-base font-extrabold text-stone-900 pt-2 border-t border-stone-100">
-                <span>Valor Total:</span>
+                <div>
+                  <span>{items.some(i => i.product.isWeighable) ? 'Valor Total Estimado:' : 'Valor Total:'}</span>
+                  {items.some(i => i.product.isWeighable) && (
+                    <span className="text-[10px] text-amber-700 font-normal block">
+                      *Sujeito a pesagem final na balança
+                    </span>
+                  )}
+                </div>
                 <span className="text-feira-700">{formatCurrency(finalCheckoutAmount)}</span>
               </div>
             </div>
@@ -556,7 +641,9 @@ export default function CartCheckoutPage() {
                 <span>Feirante não pode finalizar pedidos</span>
               ) : (
                 <>
-                  <span>Confirmar Pré-pedido ({formatCurrency(finalCheckoutAmount)})</span>
+                  <span>
+                    Confirmar Pré-pedido ({formatCurrency(finalCheckoutAmount)}{items.some(i => i.product.isWeighable) ? ' aprox.' : ''})
+                  </span>
                   <ArrowRight className="w-4 h-4" />
                 </>
               )}

@@ -22,7 +22,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, formatWeight } from '@/lib/utils';
 import { getClientReadyNotifyLink } from '@/lib/whatsapp';
 
 interface OrderKanbanProps {
@@ -315,7 +315,7 @@ export function OrderKanban({ orders, onUpdateStatus, onOrderUpdated, fairs }: O
                               <div key={item.id} className="space-y-1 pt-1.5 border-t border-stone-200/60 first:border-0 first:pt-0">
                                 <div className="flex justify-between gap-1 items-start">
                                   <span className="truncate max-w-[160px] font-medium text-stone-900">
-                                    {item.measuredWeight ? `${item.measuredWeight}kg` : `${item.quantity}x`} {item.productName}
+                                    {item.measuredWeight ? `${item.measuredWeight}kg` : (isWeighable ? `${formatWeight(item.quantity)} aprox.` : `${item.quantity}x`)} {item.productName}
                                   </span>
                                   <span className="font-bold text-stone-800 shrink-0">
                                     {formatCurrency(item.subtotal || item.unitPrice * item.quantity)}
@@ -335,7 +335,7 @@ export function OrderKanban({ orders, onUpdateStatus, onOrderUpdated, fairs }: O
                                         </span>
                                       ) : (
                                         <span className="text-amber-700 font-semibold text-[9px]">
-                                          Pendente (est. {item.quantity} kg)
+                                          Pendente (est. {formatWeight(item.quantity)})
                                         </span>
                                       )}
                                     </div>

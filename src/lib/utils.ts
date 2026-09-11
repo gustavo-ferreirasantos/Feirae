@@ -26,3 +26,15 @@ export function formatDate(dateString: string): string {
     return dateString;
   }
 }
+
+export function formatWeight(weightInKg: number): string {
+  if (weightInKg < 1) {
+    const grams = Math.round(weightInKg * 1000);
+    return `${grams}g`;
+  }
+  const formatted = weightInKg.toLocaleString('pt-BR', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 3,
+  });
+  return `${formatted}kg`;
+}

@@ -112,7 +112,7 @@ model Product {
   category    String
   unit        String      @default("kg")
   price       Float
-  stock       Int         @default(0)
+  stock       Float       @default(0)
   imageUrl    String?
   isOrganic   Boolean     @default(false)
   isWeighable Boolean     @default(false)
@@ -178,7 +178,7 @@ model OrderItem {
   productName    String
   productUnit    String
   unitPrice      Float
-  quantity       Int
+  quantity       Float
   measuredWeight Float?
   subtotal       Float
 }

@@ -8,6 +8,7 @@ interface CartContextType {
   vendorId: string | null;
   vendorName: string | null;
   addItem: (product: Product, quantity?: number) => { success: boolean; message?: string };
+  setItemQuantity: (product: Product, quantity: number) => { success: boolean; message?: string };
   removeItem: (productId: string) => void;
   updateQuantity: (productId: string, quantity: number) => void;
   clearCart: () => void;
@@ -56,7 +57,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     }
 
     const currentQty = items.find(i => i.product.id === product.id)?.quantity || 0;
-    if (currentQty + quantity > product.stock) {
+    const cleanQty = Number(quantity.toFixed(3));
+    if (Number((currentQty + cleanQty).toFixed(3)) > product.stock) {
       return {
         success: false,
         message: `Estoque máximo disponível atingido (${product.stock} ${product.unit}).`
@@ -71,11 +73,50 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       if (existing) {
         return prev.map(i => 
           i.product.id === product.id 
-            ? { ...i, quantity: i.quantity + quantity }
+            ? { ...i, quantity: Number((i.quantity + cleanQty).toFixed(3)) }
             : i
         );
       }
-      return [...prev, { product, quantity }];
+      return [...prev, { product, quantity: cleanQty }];
+    });
+
+    return { success: true };
+  };
+
+  const setItemQuantity = (product: Product, quantity: number): { success: boolean; message?: string } => {
+    if (vendorId && vendorId !== product.vendorId && items.length > 0) {
+      return {
+        success: false,
+        message: 'Seu carrinho já contém produtos de outro feirante. Finalize ou esvazie o carrinho atual para comprar desta barraca.'
+      };
+    }
+
+    const cleanQty = Number(quantity.toFixed(3));
+    if (cleanQty <= 0.001) {
+      removeItem(product.id);
+      return { success: true };
+    }
+
+    if (cleanQty > product.stock) {
+      return {
+        success: false,
+        message: `Estoque máximo disponível atingido (${product.stock} ${product.unit}).`
+      };
+    }
+
+    setVendorId(product.vendorId);
+    setVendorName(product.vendorName || 'Feirante');
+
+    setItems(prev => {
+      const existing = prev.find(i => i.product.id === product.id);
+      if (existing) {
+        return prev.map(i => 
+          i.product.id === product.id 
+            ? { ...i, quantity: cleanQty }
+            : i
+        );
+      }
+      return [...prev, { product, quantity: cleanQty }];
     });
 
     return { success: true };
@@ -93,13 +134,14 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
   };
 
   const updateQuantity = (productId: string, quantity: number) => {
-    if (quantity <= 0) {
+    const cleanQty = Number(quantity.toFixed(3));
+    if (cleanQty <= 0.001) {
       removeItem(productId);
       return;
     }
     setItems(prev => prev.map(i => {
       if (i.product.id === productId) {
-        const validQty = Math.min(quantity, i.product.stock);
+        const validQty = Number(Math.min(cleanQty, i.product.stock).toFixed(3));
         return { ...i, quantity: validQty };
       }
       return i;
@@ -112,8 +154,8 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
     setVendorName(null);
   };
 
-  const totalItems = items.reduce((sum, i) => sum + i.quantity, 0);
-  const totalAmount = items.reduce((sum, i) => sum + i.product.price * i.quantity, 0);
+  const totalItems = items.reduce((sum, i) => sum + (i.product.isWeighable ? 1 : i.quantity), 0);
+  const totalAmount = Number(items.reduce((sum, i) => sum + (i.product.price * i.quantity), 0).toFixed(2));
 
   return (
     <CartContext.Provider value={{
@@ -121,6 +163,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       vendorId,
       vendorName,
       addItem,
+      setItemQuantity,
       removeItem,
       updateQuantity,
       clearCart,

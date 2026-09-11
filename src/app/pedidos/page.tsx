@@ -19,7 +19,7 @@ import {
 import { Order, OrderStatus } from '@/types';
 import { useUser } from '@/lib/user-context';
 import { useCart } from '@/lib/cart-context';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, formatWeight } from '@/lib/utils';
 import { StarRating } from '@/components/StarRating';
 import { ReviewModal } from '@/components/ReviewModal';
 import { LoginModal } from '@/components/LoginModal';
@@ -231,20 +231,25 @@ export default function ClientOrdersPage() {
                   <span className="font-bold text-[10px] uppercase tracking-wider text-stone-400 block mb-1">
                     Itens Reservados:
                   </span>
-                  {order.items.map(item => (
-                    <div key={item.id} className="flex justify-between items-start text-stone-700">
-                      <div>
-                        <span>{item.quantity}x {item.productName}</span>
-                        {item.measuredWeight != null && (
-                          <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5">
-                            <Scale className="w-2.5 h-2.5 shrink-0" />
-                            <span>Peso aferido na balança: <strong>{item.measuredWeight} kg</strong></span>
-                          </div>
-                        )}
+                  {order.items.map(item => {
+                    const isWeighable = item.productUnit?.toLowerCase() === 'kg' || item.measuredWeight != null || item.quantity % 1 !== 0;
+                    return (
+                      <div key={item.id} className="flex justify-between items-start text-stone-700">
+                        <div>
+                          <span>
+                            {item.measuredWeight ? `${item.measuredWeight}kg` : (isWeighable ? `${formatWeight(item.quantity)} aprox.` : `${item.quantity}x`)} {item.productName}
+                          </span>
+                          {item.measuredWeight != null && (
+                            <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5">
+                              <Scale className="w-2.5 h-2.5 shrink-0" />
+                              <span>Peso aferido na balança: <strong>{item.measuredWeight} kg</strong></span>
+                            </div>
+                          )}
+                        </div>
+                        <span className="font-semibold text-stone-900">{formatCurrency(item.subtotal)}</span>
                       </div>
-                      <span className="font-semibold text-stone-900">{formatCurrency(item.subtotal)}</span>
-                    </div>
-                  ))}
+                    );
+                  })}
                   <div className="pt-2 border-t border-stone-200 flex justify-between font-extrabold text-stone-900">
                     <span>Total:</span>
                     <span className="text-feira-700">{formatCurrency(order.totalAmount)}</span>

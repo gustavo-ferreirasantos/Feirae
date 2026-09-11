@@ -326,8 +326,8 @@ class MemoryStore {
         };
       }
 
-      const subtotal = product.price * item.quantity;
-      subtotalAmount += subtotal;
+      const subtotal = Math.round((product.price * item.quantity) * 100) / 100;
+      subtotalAmount = Math.round((subtotalAmount + subtotal) * 100) / 100;
 
       orderItems.push({
         id: `item-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -364,7 +364,7 @@ class MemoryStore {
     for (const item of orderData.items) {
       const product = this.getProductById(item.productId);
       if (product) {
-        product.stock -= item.quantity;
+        product.stock = Number(Math.max(0, product.stock - item.quantity).toFixed(3));
       }
     }
 
@@ -429,7 +429,7 @@ class MemoryStore {
       for (const item of order.items) {
         const product = this.getProductById(item.productId);
         if (product) {
-          product.stock += item.quantity;
+          product.stock = Number((product.stock + item.quantity).toFixed(3));
         }
       }
     }
