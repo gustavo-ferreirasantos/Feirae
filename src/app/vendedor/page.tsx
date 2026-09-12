@@ -44,6 +44,7 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import { OrderKanban } from '@/components/OrderKanban';
 import { StarRating } from '@/components/StarRating';
 import { LoginModal } from '@/components/LoginModal';
+import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
 interface FinancialStats {
   vendor: {
@@ -107,6 +108,14 @@ export default function VendorDashboardPage() {
 
   // Login Modal for unauthorized users
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
+
+  // Payment Modal State for Featured & Pro Plan
+  const [paymentModal, setPaymentModal] = useState<{
+    isOpen: boolean;
+    type: 'FEATURED' | 'PRO_PLAN';
+    title: string;
+    amount: number;
+  } | null>(null);
 
   // Financial Tab State (US20)
   const [financeData, setFinanceData] = useState<FinancialStats | null>(null);
@@ -384,16 +393,15 @@ export default function VendorDashboardPage() {
     }
   };
 
-  const handleTogglePlan = async () => {
+  const executePlanChange = async (targetPlan: 'FREE' | 'PRO') => {
     setTogglingPlan(true);
     try {
-      const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
-      const newPlan: 'FREE' | 'PRO' = isPro ? 'FREE' : 'PRO';
+      const isPro = targetPlan === 'PRO';
       const payload = {
-        plan: newPlan,
-        isSubscriber: !isPro,
-        maxProducts: !isPro ? 9999 : 5,
-        commissionRate: !isPro ? 0 : 0.05,
+        plan: targetPlan,
+        isSubscriber: isPro,
+        maxProducts: isPro ? 9999 : 5,
+        commissionRate: isPro ? 0 : 0.05,
       };
 
       const res = await fetch(`/api/vendors/${activeVendorId}`, {
@@ -414,18 +422,33 @@ export default function VendorDashboardPage() {
     }
   };
 
-  const handleToggleFeatured = async () => {
+  const handleTogglePlan = async () => {
+    const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
+    if (isPro) {
+      if (confirm('Deseja realmente voltar para o Plano Gratuito (limite de 5 produtos e taxa padrão)?')) {
+        await executePlanChange('FREE');
+      }
+    } else {
+      // Open Mercado Pago checkout modal with Pix, Card and Checkout Pro
+      setPaymentModal({
+        isOpen: true,
+        type: 'PRO_PLAN',
+        title: 'Assinatura Plano Feirante Pro (Mensal)',
+        amount: 49.90,
+      });
+    }
+  };
+
+  const executeFeaturedChange = async (enable: boolean) => {
     setTogglingFeatured(true);
     setFeaturedSuccessMsg(null);
     try {
-      const isCurrentlyFeatured = Boolean(currentVendor?.isFeatured);
-      const nextFeatured = !isCurrentlyFeatured;
-      const featuredUntil = nextFeatured 
+      const featuredUntil = enable 
         ? new Date(Date.now() + 86400000 * 7).toISOString()
         : null;
 
       const payload = {
-        isFeatured: nextFeatured,
+        isFeatured: enable,
         featuredUntil,
       };
 
@@ -439,7 +462,7 @@ export default function VendorDashboardPage() {
         updateCurrentVendor(payload);
         loadVendorData();
         setFeaturedSuccessMsg(
-          nextFeatured 
+          enable 
             ? '🎉 Destaque Patrocinado ativado com sucesso! Sua barraca agora está no topo da vitrine principal da feira.'
             : 'Destaque Patrocinado pausado.'
         );
@@ -452,13 +475,39 @@ export default function VendorDashboardPage() {
     }
   };
 
+  const handleToggleFeatured = async () => {
+    const isCurrentlyFeatured = Boolean(currentVendor?.isFeatured);
+    const featuredUntil = currentVendor?.featuredUntil;
+    const isExpired = featuredUntil && new Date(featuredUntil).getTime() < Date.now();
+    const activeFeatured = isCurrentlyFeatured && !isExpired;
+
+    if (activeFeatured) {
+      await executeFeaturedChange(false);
+    } else {
+      // Open Mercado Pago checkout modal with Pix, Card and Checkout Pro
+      setPaymentModal({
+        isOpen: true,
+        type: 'FEATURED',
+        title: 'Destaque Patrocinado na Vitrine (7 dias)',
+        amount: 29.90,
+      });
+    }
+  };
+
   const openNewProductModal = () => {
     const isPro = currentVendor?.plan === 'PRO' || currentVendor?.isSubscriber;
     const activeCount = products.filter(p => p.isActive).length;
     const maxLimit = currentVendor?.maxProducts || 5;
 
     if (!isPro && activeCount >= maxLimit) {
-      alert(`⚠️ Limite de ${maxLimit} produtos do Plano Gratuito atingido!\n\nFaça upgrade para o Plano Feirante Pro para cadastrar produtos ilimitados, obter a badge ⭐ Parceiro Pro e ter 0% de comissão por pedido!`);
+      if (confirm(`⚠️ Limite de ${maxLimit} produtos do Plano Gratuito atingido!\n\nDeseja abrir a tela de pagamento para assinar o Plano Feirante Pro (R$ 49,90) via Pix, Cartão ou Checkout Pro e liberar produtos ilimitados agora?`)) {
+        setPaymentModal({
+          isOpen: true,
+          type: 'PRO_PLAN',
+          title: 'Assinatura Plano Feirante Pro (Mensal)',
+          amount: 49.90,
+        });
+      }
       return;
     }
 
@@ -3260,6 +3309,27 @@ export default function VendorDashboardPage() {
           </div>
 
         </div>
+      )}
+
+      {/* Mercado Pago Payment Modal for Destaque Patrocinado & Plano Feirante Pro */}
+      {paymentModal?.isOpen && (
+        <MercadoPagoModal
+          totalAmount={paymentModal.amount}
+          type={paymentModal.type}
+          itemTitle={paymentModal.title}
+          clientId={currentUser?.id || 'user-vendor-1'}
+          clientName={currentVendor?.businessName || currentUser?.name || 'Feirante Parceiro'}
+          clientEmail={currentUser?.email || 'feirante@feirae.com'}
+          onSuccess={() => {
+            if (paymentModal.type === 'FEATURED') {
+              executeFeaturedChange(true);
+            } else if (paymentModal.type === 'PRO_PLAN') {
+              executePlanChange('PRO');
+            }
+            setPaymentModal(null);
+          }}
+          onClose={() => setPaymentModal(null)}
+        />
       )}
 
     </div>

@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { 
   Package, 
   Clock, 
@@ -14,7 +15,8 @@ import {
   Truck,
   Store,
   QrCode,
-  Scale
+  Scale,
+  CreditCard
 } from 'lucide-react';
 import { Order, OrderStatus } from '@/types';
 import { useUser } from '@/lib/user-context';
@@ -24,16 +26,32 @@ import { StarRating } from '@/components/StarRating';
 import { ReviewModal } from '@/components/ReviewModal';
 import { LoginModal } from '@/components/LoginModal';
 import { PickupPassModal } from '@/components/PickupPassModal';
+import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
-export default function ClientOrdersPage() {
+function ClientOrdersContent() {
   const { currentUser } = useUser();
   const { addItem } = useCart();
+  const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [selectedPassOrder, setSelectedPassOrder] = useState<Order | null>(null);
+  const [payOrder, setPayOrder] = useState<Order | null>(null);
+
+  useEffect(() => {
+    if (searchParams.get('paid') === 'true') {
+      setActionFeedback('Pagamento aprovado com sucesso via Mercado Pago Sandbox!');
+      setTimeout(() => setActionFeedback(null), 5000);
+    } else if (searchParams.get('cancelled') === 'true') {
+      setActionFeedback('Pedido cancelado com sucesso e itens estornados para o feirante.');
+      setTimeout(() => setActionFeedback(null), 5000);
+    } else if (searchParams.get('pending') === 'true') {
+      setActionFeedback('Pedido registrado! Pagamento Mercado Pago pendente.');
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  }, [searchParams]);
 
   const fetchOrders = async () => {
     if (!currentUser?.id) {
@@ -163,6 +181,31 @@ export default function ClientOrdersPage() {
         />
       )}
 
+      {payOrder && (
+        <MercadoPagoModal
+          orderId={payOrder.id}
+          orderNumber={payOrder.orderNumber}
+          totalAmount={payOrder.totalAmount}
+          clientId={currentUser?.id || payOrder.clientId}
+          clientName={currentUser?.name || payOrder.clientName}
+          clientEmail={currentUser?.email || payOrder.clientEmail}
+          onSuccess={() => {
+            setPayOrder(null);
+            setActionFeedback('Pagamento aprovado com sucesso via Mercado Pago Sandbox!');
+            fetchOrders();
+          }}
+          onClose={() => {
+            setPayOrder(null);
+            fetchOrders();
+          }}
+          onCancelOrder={() => {
+            setPayOrder(null);
+            setActionFeedback('Pedido cancelado com sucesso e estoque estornado.');
+            fetchOrders();
+          }}
+        />
+      )}
+
       <div>
         <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
           Meus Pré-pedidos
@@ -266,8 +309,19 @@ export default function ClientOrdersPage() {
                       <MapPin className="w-3.5 h-3.5 text-feira-600 shrink-0 mt-0.5" />
                       <span>{order.pickupLocation}</span>
                     </div>
-                    <div className="text-[11px] text-stone-500">
-                      Pagamento: <strong className="text-stone-800">{order.paymentStatus === 'SIMULADO_APROVADO' ? 'Mercado Pago Sandbox (Pago)' : 'Presencial na Retirada'}</strong>
+                    <div className="text-[11px] text-stone-500 flex items-center gap-1.5 flex-wrap">
+                      <span>Pagamento:</span>
+                      {order.paymentStatus === 'SIMULADO_APROVADO' ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Mercado Pago (Pago)
+                        </span>
+                      ) : order.paymentStatus === 'PENDENTE' && (order.paymentMethod === 'MERCADO_PAGO_PIX' || order.paymentMethod === 'MERCADO_PAGO_CARTAO') ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
+                          <Clock className="w-3 h-3 text-amber-600" /> Mercado Pago (Pendente)
+                        </span>
+                      ) : (
+                        <strong className="text-stone-800">Presencial na Retirada</strong>
+                      )}
                     </div>
                   </div>
 
@@ -281,6 +335,16 @@ export default function ClientOrdersPage() {
 
               <div className="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
+                  {order.paymentStatus === 'PENDENTE' && order.status !== 'CANCELADO' && (
+                    <button
+                      onClick={() => setPayOrder(order)}
+                      className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <CreditCard className="w-3.5 h-3.5" />
+                      <span>Pagar no Mercado Pago</span>
+                    </button>
+                  )}
+
                   {order.status !== 'CANCELADO' && order.status !== 'RETIRADO' && (
                     <button
                       onClick={() => setSelectedPassOrder(order)}
@@ -352,5 +416,20 @@ export default function ClientOrdersPage() {
       )}
 
     </div>
+  );
+}
+
+export default function ClientOrdersPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center text-stone-400">
+          <div className="w-8 h-8 border-4 border-feira-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+          <p className="text-xs font-semibold text-stone-500">Carregando seus pré-pedidos...</p>
+        </div>
+      }
+    >
+      <ClientOrdersContent />
+    </Suspense>
   );
 }

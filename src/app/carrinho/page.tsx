@@ -195,13 +195,20 @@ export default function CartCheckoutPage() {
           orderId={createdOrder.id}
           orderNumber={createdOrder.orderNumber}
           totalAmount={createdOrder.totalAmount}
+          clientId={currentUser?.id || 'user-client-1'}
+          clientName={currentUser?.name || 'Cliente Consumidor'}
+          clientEmail={currentUser?.email || 'cliente@feirae.com'}
           onSuccess={() => {
             setShowMpModal(false);
             router.push('/pedidos?paid=true');
           }}
           onClose={() => {
             setShowMpModal(false);
-            router.push('/pedidos');
+            router.push('/pedidos?pending=true');
+          }}
+          onCancelOrder={() => {
+            setShowMpModal(false);
+            router.push('/pedidos?cancelled=true');
           }}
         />
       )}
