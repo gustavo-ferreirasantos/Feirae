@@ -164,14 +164,70 @@ export async function POST(request: Request) {
           data: {
             userId: vendor.userId,
             title: 'Novo Pré-pedido Recebido!',
-            message: `${body.clientName} realizou o pedido #${orderNum} no valor de R$ ${calculatedTotal.toFixed(2)}.`,
+            message: `${body.clientName} realizou o pedido #${orderNum} no valor de R$ ${finalTotal.toFixed(2)}.`,
             type: 'NEW_ORDER',
             orderId: createdOrder.id,
           },
         });
 
-        // Also sync local store
-        store.createOrder(body);
+        // Also sync local store with the created DB order
+        store.orders.unshift({
+          id: createdOrder.id,
+          orderNumber: createdOrder.orderNumber,
+          clientId: createdOrder.clientId,
+          clientName: createdOrder.clientName,
+          clientPhone: createdOrder.clientPhone || undefined,
+          clientEmail: createdOrder.clientEmail || undefined,
+          vendorId: createdOrder.vendorId,
+          vendorName: createdOrder.vendor?.businessName,
+          totalAmount: createdOrder.totalAmount,
+          couponCode: createdOrder.couponCode || undefined,
+          discountAmount: createdOrder.discountAmount,
+          originalAmount: createdOrder.originalAmount,
+          status: createdOrder.status as any,
+          paymentMethod: createdOrder.paymentMethod as any,
+          paymentStatus: createdOrder.paymentStatus as any,
+          pickupDate: createdOrder.pickupDate,
+          pickupLocation: createdOrder.pickupLocation,
+          notes: createdOrder.notes || undefined,
+          createdAt: createdOrder.createdAt.toISOString(),
+          items: createdOrder.items.map(i => ({
+            id: i.id,
+            orderId: i.orderId,
+            productId: i.productId,
+            productName: i.productName,
+            productUnit: i.productUnit,
+            unitPrice: i.unitPrice,
+            quantity: i.quantity,
+            subtotal: i.subtotal,
+            measuredWeight: i.measuredWeight || undefined,
+          })),
+        });
+
+        // Decrement local store product stock
+        for (const it of body.items) {
+          const stProd = store.getProductById(it.productId);
+          if (stProd) {
+            stProd.stock = Number(Math.max(0, stProd.stock - it.quantity).toFixed(3));
+          }
+        }
+
+        // Add local notifications for consistency
+        store.addNotification({
+          userId: vendor.userId,
+          title: 'Novo Pré-pedido Recebido!',
+          message: `${body.clientName} realizou o pedido #${orderNum} no valor de R$ ${finalTotal.toFixed(2)}.`,
+          type: 'NEW_ORDER',
+          orderId: createdOrder.id,
+        });
+
+        store.addNotification({
+          userId: createdOrder.clientId,
+          title: 'Pré-pedido Confirmado!',
+          message: `Seu pedido #${orderNum} foi enviado para ${createdOrder.vendor?.businessName || 'a banca'}. Retirada: ${createdOrder.pickupDate}.`,
+          type: 'ORDER_STATUS',
+          orderId: createdOrder.id,
+        });
 
         return NextResponse.json({
           ...createdOrder,

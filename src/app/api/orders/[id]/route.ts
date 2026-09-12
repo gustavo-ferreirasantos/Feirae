@@ -191,10 +191,10 @@ export async function DELETE(
     try {
       const order = await prisma.order.findFirst({
         where: { id: params.id, clientId },
-        include: { items: true },
+        include: { items: true, vendor: true },
       });
 
-      if (order && order.status === 'NOVO') {
+      if (order && (order.status === 'NOVO' || order.status === 'EM_PREPARO')) {
         for (const it of order.items) {
           await prisma.product.update({
             where: { id: it.productId },
@@ -206,6 +206,19 @@ export async function DELETE(
           where: { id: order.id },
           data: { status: 'CANCELADO' },
         });
+
+        // Notify vendor about the cancellation
+        if (order.vendor?.userId) {
+          await prisma.notification.create({
+            data: {
+              userId: order.vendor.userId,
+              title: `Pedido ${order.orderNumber} Cancelado`,
+              message: `O cliente cancelou o pedido #${order.orderNumber}. Os itens foram devolvidos ao estoque.`,
+              type: 'ORDER_STATUS',
+              orderId: order.id,
+            },
+          }).catch(() => {});
+        }
 
         store.cancelOrder(params.id, clientId);
         return NextResponse.json({ success: true, message: 'Pedido cancelado e estoque estornado com sucesso.' });

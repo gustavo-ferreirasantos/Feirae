@@ -59,15 +59,15 @@ export async function POST(request: Request) {
       console.warn('Prisma auth fallback to local users:', dbErr);
     }
 
-    // 2. Fallback to in-memory users for demo test accounts
-    const mockUser = INITIAL_USERS.find(u => u.email.toLowerCase() === cleanEmail);
-    if (mockUser) {
-      const mockVendor = mockUser.role === 'VENDOR' 
-        ? INITIAL_VENDORS.find(v => v.userId === mockUser.id) || INITIAL_VENDORS[0]
+    // 2. Fallback to in-memory users for demo test accounts and memory-registered users
+    const localUser = store.users.find(u => u.email.toLowerCase() === cleanEmail) || INITIAL_USERS.find(u => u.email.toLowerCase() === cleanEmail);
+    if (localUser) {
+      const localVendor = localUser.role === 'VENDOR' 
+        ? store.vendors.find(v => v.userId === localUser.id) || INITIAL_VENDORS.find(v => v.userId === localUser.id) || store.vendors[0]
         : null;
       return NextResponse.json({
-        user: mockUser,
-        vendor: mockVendor,
+        user: localUser,
+        vendor: localVendor,
       });
     }
 
