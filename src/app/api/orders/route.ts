@@ -51,9 +51,17 @@ export async function POST(request: Request) {
 
     // 1. Try Prisma Neon Transaction
     try {
+      const memoryVendor = store.getVendorById(body.vendorId);
+      const vendorOrList = [
+        { id: body.vendorId },
+        { slug: body.vendorId },
+        { userId: body.vendorId },
+        ...(memoryVendor ? [{ slug: memoryVendor.slug }, { businessName: memoryVendor.businessName }] : []),
+      ];
+
       // Find or verify vendor
       const vendor = await prisma.vendor.findFirst({
-        where: { OR: [{ id: body.vendorId }, { slug: body.vendorId }] },
+        where: { OR: vendorOrList },
       });
 
       if (vendor) {
@@ -62,7 +70,21 @@ export async function POST(request: Request) {
         const itemsToCreate = [];
 
         for (const it of body.items) {
-          const product = await prisma.product.findUnique({ where: { id: it.productId } });
+          let product = await prisma.product.findUnique({ where: { id: it.productId } });
+          if (!product) {
+            const storeProd = store.getProductById(it.productId);
+            if (storeProd) {
+              product = await prisma.product.findFirst({
+                where: {
+                  vendorId: vendor.id,
+                  OR: [
+                    { name: { equals: storeProd.name, mode: 'insensitive' } },
+                    { id: storeProd.id },
+                  ],
+                },
+              });
+            }
+          }
           if (!product) throw new Error(`Produto não encontrado.`);
           if (product.stock < it.quantity) {
             return NextResponse.json({

@@ -7,9 +7,17 @@ export async function GET(
   { params }: { params: { id: string } }
 ) {
   try {
+    const memoryVendor = store.getVendorById(params.id);
+    const vendorOrList = [
+      { id: params.id },
+      { slug: params.id },
+      { userId: params.id },
+      ...(memoryVendor ? [{ slug: memoryVendor.slug }, { businessName: memoryVendor.businessName }] : []),
+    ];
+
     const dbVendor = await prisma.vendor.findFirst({
       where: {
-        OR: [{ id: params.id }, { slug: params.id }],
+        OR: vendorOrList,
       },
       include: {
         products: { where: { isActive: true } },

@@ -109,11 +109,25 @@ class MemoryStore {
   }
 
   getVendorById(id: string): Vendor | undefined {
-    return this.vendors.find(v => v.id === id || v.slug === id);
+    if (!id) return undefined;
+    const cleanId = id.trim().toLowerCase();
+    return this.vendors.find(v => 
+      v.id === id || 
+      v.slug === id || 
+      v.slug.toLowerCase() === cleanId || 
+      v.userId === id || 
+      v.businessName.toLowerCase() === cleanId
+    );
   }
 
   updateVendor(id: string, updates: Partial<Vendor>): Vendor | undefined {
-    const index = this.vendors.findIndex(v => v.id === id || v.slug === id);
+    const cleanId = id ? id.trim().toLowerCase() : '';
+    const index = this.vendors.findIndex(v => 
+      v.id === id || 
+      v.slug === id || 
+      v.slug.toLowerCase() === cleanId || 
+      v.userId === id
+    );
     if (index === -1) return undefined;
     this.vendors[index] = { ...this.vendors[index], ...updates };
     return this.vendors[index];
@@ -224,7 +238,13 @@ class MemoryStore {
   }
 
   getProductById(id: string): Product | undefined {
-    return this.products.find(p => p.id === id);
+    if (!id) return undefined;
+    const cleanId = id.trim().toLowerCase();
+    return this.products.find(p => 
+      p.id === id || 
+      p.id.toLowerCase() === cleanId || 
+      p.name.toLowerCase() === cleanId
+    );
   }
 
   addProduct(productData: Omit<Product, 'id'>): Product {
@@ -307,7 +327,13 @@ class MemoryStore {
     notes?: string;
     couponCode?: string;
   }): { success: boolean; order?: Order; error?: string } {
-    const vendor = this.getVendorById(orderData.vendorId);
+    let vendor = this.getVendorById(orderData.vendorId);
+    if (!vendor && orderData.items && orderData.items.length > 0) {
+      const firstProd = this.getProductById(orderData.items[0].productId);
+      if (firstProd) {
+        vendor = this.getVendorById(firstProd.vendorId);
+      }
+    }
     if (!vendor) return { success: false, error: 'Feirante não encontrado.' };
 
     // Validate stock and prepare items
