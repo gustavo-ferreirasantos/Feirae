@@ -34,7 +34,7 @@ export default function CartCheckoutPage() {
 
   const [pickupWindows, setPickupWindows] = useState<PickupWindow[]>([]);
   const [selectedWindowId, setSelectedWindowId] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'RETIRADA' | 'MERCADO_PAGO_PIX' | 'MERCADO_PAGO_CARTAO'>('RETIRADA');
+  const [paymentMethod, setPaymentMethod] = useState<'RETIRADA' | 'MERCADO_PAGO_PIX'>('MERCADO_PAGO_PIX');
   const [notes, setNotes] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -151,7 +151,7 @@ export default function CartCheckoutPage() {
 
       clearCart();
 
-      if (paymentMethod === 'MERCADO_PAGO_PIX' || paymentMethod === 'MERCADO_PAGO_CARTAO') {
+      if (paymentMethod === 'MERCADO_PAGO_PIX') {
         setCreatedOrder({
           id: data.id,
           orderNumber: data.orderNumber,
@@ -479,11 +479,12 @@ export default function CartCheckoutPage() {
                 Opção de Pagamento:
               </label>
 
-              <div className="space-y-2">
+              <div className="space-y-2.5">
+                {/* Opção 1: Presencial */}
                 <label
-                  className={'flex items-center justify-between p-3 rounded-2xl border text-xs cursor-pointer transition ' + (
+                  className={'flex items-center justify-between p-3.5 rounded-2xl border text-xs cursor-pointer transition ' + (
                     paymentMethod === 'RETIRADA'
-                      ? 'border-feira-600 bg-feira-50/60 font-semibold text-stone-900'
+                      ? 'border-feira-600 bg-feira-50/60 font-semibold text-stone-900 shadow-2xs'
                       : 'border-stone-200 hover:bg-stone-50 text-stone-600'
                   )}
                 >
@@ -496,19 +497,20 @@ export default function CartCheckoutPage() {
                       className="text-feira-600 focus:ring-feira-500"
                     />
                     <div>
-                      <div>Pagamento Presencial na Retirada</div>
-                      <div className="text-[10px] text-stone-400 font-normal">Pague em dinheiro, Pix ou cartão na barraca</div>
+                      <div className="font-bold text-stone-900">Pagamento Presencial na Retirada</div>
+                      <div className="text-[10px] text-stone-500 font-normal">Pague em dinheiro, Pix ou cartão na barraca</div>
                     </div>
                   </div>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
                     Padrão
                   </span>
                 </label>
 
+                {/* Opção 2: Pagamento Online (Pix / Cartão) */}
                 <label
-                  className={'flex items-center justify-between p-3 rounded-2xl border text-xs cursor-pointer transition ' + (
+                  className={'flex items-center justify-between p-3.5 rounded-2xl border text-xs cursor-pointer transition ' + (
                     paymentMethod === 'MERCADO_PAGO_PIX'
-                      ? 'border-sky-600 bg-sky-50/60 font-semibold text-stone-900'
+                      ? 'border-feira-600 bg-feira-50/60 font-semibold text-stone-900 shadow-2xs'
                       : 'border-stone-200 hover:bg-stone-50 text-stone-600'
                   )}
                 >
@@ -518,18 +520,18 @@ export default function CartCheckoutPage() {
                       name="paymentMethod"
                       checked={paymentMethod === 'MERCADO_PAGO_PIX'}
                       onChange={() => setPaymentMethod('MERCADO_PAGO_PIX')}
-                      className="text-sky-600 focus:ring-sky-500"
+                      className="text-feira-600 focus:ring-feira-500"
                     />
                     <div>
-                      <div className="flex items-center gap-1 font-semibold text-sky-900">
-                        <QrCode className="w-3.5 h-3.5 text-sky-600" />
-                        Mercado Pago Sandbox (Pix / Cartão)
+                      <div className="flex items-center gap-1.5 font-bold text-stone-900">
+                        <QrCode className="w-3.5 h-3.5 text-feira-600" />
+                        Pagamento Online (Pix / Cartão)
                       </div>
-                      <div className="text-[10px] text-stone-400 font-normal">Simulação online instantânea</div>
+                      <div className="text-[10px] text-stone-500 font-normal">Pague via Pix Instantâneo ou Cartão de Crédito</div>
                     </div>
                   </div>
-                  <span className="text-[10px] bg-sky-100 text-sky-800 px-2 py-0.5 rounded font-bold">
-                    Sandbox
+                  <span className="text-[10px] bg-sky-100 text-sky-800 px-2.5 py-0.5 rounded-full font-bold">
+                    Online
                   </span>
                 </label>
               </div>

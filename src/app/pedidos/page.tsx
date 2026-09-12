@@ -4,21 +4,19 @@ import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { 
-  Package, 
-  Clock, 
-  MapPin, 
+  ShoppingBag, 
   Calendar, 
-  RotateCcw, 
-  XCircle, 
-  Star, 
+  MapPin, 
+  Clock, 
   CheckCircle2, 
-  Truck,
-  Store,
+  XCircle, 
+  Store, 
+  RotateCcw,
+  Star,
   QrCode,
-  Scale,
   CreditCard
 } from 'lucide-react';
-import { Order, OrderStatus } from '@/types';
+import { Order } from '@/types';
 import { useUser } from '@/lib/user-context';
 import { useCart } from '@/lib/cart-context';
 import { formatCurrency, formatDate, formatWeight } from '@/lib/utils';
@@ -29,7 +27,7 @@ import { PickupPassModal } from '@/components/PickupPassModal';
 import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
 function ClientOrdersContent() {
-  const { currentUser } = useUser();
+  const { currentUser, isLoaded } = useUser();
   const { addItem } = useCart();
   const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
@@ -40,49 +38,65 @@ function ClientOrdersContent() {
   const [selectedPassOrder, setSelectedPassOrder] = useState<Order | null>(null);
   const [payOrder, setPayOrder] = useState<Order | null>(null);
 
-  useEffect(() => {
-    if (searchParams.get('paid') === 'true') {
-      setActionFeedback('Pagamento aprovado com sucesso via Mercado Pago Sandbox!');
-      setTimeout(() => setActionFeedback(null), 5000);
-    } else if (searchParams.get('cancelled') === 'true') {
-      setActionFeedback('Pedido cancelado com sucesso e itens estornados para o feirante.');
-      setTimeout(() => setActionFeedback(null), 5000);
-    } else if (searchParams.get('pending') === 'true') {
-      setActionFeedback('Pedido registrado! Pagamento Mercado Pago pendente.');
-      setTimeout(() => setActionFeedback(null), 5000);
-    }
-  }, [searchParams]);
-
   const fetchOrders = async () => {
-    if (!currentUser?.id) {
-      setLoading(false);
-      return;
-    }
     try {
-      const res = await fetch('/api/orders?clientId=' + (currentUser?.id || ''));
+      const activeClientId = currentUser?.id || 'user-client-1';
+      const res = await fetch('/api/orders?clientId=' + encodeURIComponent(activeClientId));
       if (res.ok) {
         const data = await res.json();
         setOrders(data);
       }
     } catch (err) {
-      console.error(err);
+      console.error('Erro ao buscar pedidos:', err);
     } finally {
       setLoading(false);
     }
   };
 
+  // Sync callback params (paid, pending, failure)
   useEffect(() => {
-    fetchOrders();
-  }, [currentUser?.id]);
+    const isPaid = searchParams.get('paid') === 'true' || searchParams.get('status') === 'approved';
+    const isPending = searchParams.get('pending') === 'true' || searchParams.get('status') === 'pending';
+    const isCancelled = searchParams.get('cancelled') === 'true' || searchParams.get('status') === 'failure';
+    const orderIdParam = searchParams.get('orderId') || searchParams.get('external_reference');
+
+    if (isPaid) {
+      if (orderIdParam) {
+        fetch('/api/payments/webhook', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            orderId: orderIdParam,
+            mpPaymentId: searchParams.get('payment_id') || `MP-PAY-${Date.now().toString().slice(-7)}`,
+            status: 'approved',
+          }),
+        }).then(() => fetchOrders()).catch(console.error);
+      }
+      setActionFeedback('🎉 Pagamento aprovado com sucesso!');
+      setTimeout(() => setActionFeedback(null), 5000);
+    } else if (isCancelled) {
+      setActionFeedback('Pagamento não concluído ou cancelado.');
+      setTimeout(() => setActionFeedback(null), 5000);
+    } else if (isPending) {
+      setActionFeedback('Pedido registrado! Pagamento online pendente.');
+      setTimeout(() => setActionFeedback(null), 5000);
+    }
+  }, [searchParams]);
+
+  useEffect(() => {
+    if (isLoaded) {
+      fetchOrders();
+    }
+  }, [isLoaded, currentUser?.id]);
 
   const handleCancelOrder = async (orderId: string) => {
-    if (!currentUser?.id) return;
     if (!confirm('Deseja realmente cancelar este pré-pedido? O estoque será devolvido à barraca do feirante.')) {
       return;
     }
 
     try {
-      const res = await fetch('/api/orders/' + orderId + '?clientId=' + (currentUser?.id || ''), {
+      const activeClientId = currentUser?.id || 'user-client-1';
+      const res = await fetch('/api/orders/' + orderId + '?clientId=' + encodeURIComponent(activeClientId), {
         method: 'DELETE',
       });
 
@@ -100,208 +114,191 @@ function ClientOrdersContent() {
   };
 
   const handleRepeatOrder = (order: Order) => {
-    let addedCount = 0;
-    for (const item of order.items) {
-      const res = addItem({
-        id: item.productId,
-        vendorId: order.vendorId,
-        vendorName: order.vendorName,
-        name: item.productName,
-        description: '',
-        category: '',
-        unit: item.productUnit,
-        price: item.unitPrice,
-        stock: 50,
-        isOrganic: false,
-        isActive: true,
-      }, item.quantity);
-      if (res.success) addedCount++;
+    if (!order.items || order.items.length === 0) return;
+
+    order.items.forEach(item => {
+      addItem(
+        {
+          id: item.productId,
+          vendorId: order.vendorId,
+          vendorName: order.vendorName || 'Feirante',
+          name: item.productName,
+          description: '',
+          category: 'Hortifrúti',
+          unit: item.productUnit || 'kg',
+          price: item.unitPrice,
+          stock: 99,
+          isActive: true,
+          isOrganic: false,
+        },
+        item.quantity
+      );
+    });
+
+    setActionFeedback(`Itens do pedido #${order.orderNumber} adicionados ao seu carrinho!`);
+    setTimeout(() => setActionFeedback(null), 4000);
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'NOVO':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-sky-100 text-sky-800">Novo / Recebido</span>;
+      case 'EM_PREPARO':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-800">Em Separação</span>;
+      case 'PRONTO':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800">Pronto para Retirada</span>;
+      case 'RETIRADO':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-stone-100 text-stone-700">Retirado na Feira</span>;
+      case 'CANCELADO':
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-red-100 text-red-700">Cancelado</span>;
+      default:
+        return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-stone-100 text-stone-700">{status}</span>;
     }
-
-    setActionFeedback(addedCount + ' item(ns) adicionado(s) novamente ao seu carrinho!');
-    setTimeout(() => setActionFeedback(null), 3500);
   };
 
-  const getStatusBadge = (status: OrderStatus) => {
-    const map: Record<OrderStatus, { label: string; bg: string; text: string; icon: React.ElementType }> = {
-      NOVO: { label: 'Aguardando Preparo', bg: 'bg-amber-100', text: 'text-amber-800', icon: Clock },
-      EM_PREPARO: { label: 'Em Separação', bg: 'bg-blue-100', text: 'text-blue-800', icon: Package },
-      PRONTO: { label: 'Pronto para Retirada!', bg: 'bg-emerald-100', text: 'text-emerald-800', icon: CheckCircle2 },
-      RETIRADO: { label: 'Concluído / Retirado', bg: 'bg-stone-100', text: 'text-stone-700', icon: Truck },
-      CANCELADO: { label: 'Cancelado', bg: 'bg-red-100', text: 'text-red-700', icon: XCircle },
-    };
-    const item = map[status];
-    const Icon = item.icon;
+  if (loading) {
     return (
-      <span className={'inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold ' + item.bg + ' ' + item.text}>
-        <Icon className="w-3.5 h-3.5" />
-        {item.label}
-      </span>
-    );
-  };
-
-  if (!currentUser) {
-    return (
-      <div className="max-w-md mx-auto px-4 py-20 text-center space-y-4">
-        <div className="w-16 h-16 rounded-3xl bg-feira-100 text-feira-700 flex items-center justify-center mx-auto shadow-xs">
-          <Package className="w-8 h-8" />
-        </div>
-        <h2 className="text-xl font-bold text-stone-900">Acesse seus Pré-pedidos</h2>
-        <p className="text-xs text-stone-500 max-w-sm mx-auto leading-relaxed">
-          Faça login com sua conta de cliente para visualizar seu histórico de pedidos, código de retirada e avaliações de feirantes.
-        </p>
-        <div className="pt-2">
-          <button
-            onClick={() => setIsLoginModalOpen(true)}
-            className="px-6 py-2.5 rounded-xl bg-feira-600 hover:bg-feira-700 text-white font-bold text-xs shadow-xs transition"
-          >
-            Entrar na Minha Conta
-          </button>
-        </div>
-        <LoginModal
-          isOpen={isLoginModalOpen}
-          onClose={() => setIsLoginModalOpen(false)}
-        />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16 text-center text-stone-400">
+        <div className="w-8 h-8 border-4 border-feira-600 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+        <p className="text-xs font-semibold text-stone-500">Carregando seus pré-pedidos...</p>
       </div>
     );
   }
 
   return (
-    <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-10 space-y-8">
+    <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10">
+      
+      {/* Review Modal */}
       {reviewOrder && (
         <ReviewModal
           order={reviewOrder}
           onClose={() => setReviewOrder(null)}
           onSuccess={() => {
             setReviewOrder(null);
-            setActionFeedback('Avaliação enviada com sucesso!');
-            setTimeout(() => setActionFeedback(null), 3000);
+            setActionFeedback('Avaliação enviada com sucesso! Obrigado pelo feedback.');
+            setTimeout(() => setActionFeedback(null), 4000);
             fetchOrders();
           }}
         />
       )}
 
-      {payOrder && (
-        <MercadoPagoModal
-          orderId={payOrder.id}
-          orderNumber={payOrder.orderNumber}
-          totalAmount={payOrder.totalAmount}
-          clientId={currentUser?.id || payOrder.clientId}
-          clientName={currentUser?.name || payOrder.clientName}
-          clientEmail={currentUser?.email || payOrder.clientEmail}
-          onSuccess={() => {
-            setPayOrder(null);
-            setActionFeedback('Pagamento aprovado com sucesso via Mercado Pago Sandbox!');
-            fetchOrders();
-          }}
-          onClose={() => {
-            setPayOrder(null);
-            fetchOrders();
-          }}
-          onCancelOrder={() => {
-            setPayOrder(null);
-            setActionFeedback('Pedido cancelado com sucesso e estoque estornado.');
-            fetchOrders();
-          }}
-        />
-      )}
+      {/* Login Modal for Guests */}
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onClose={() => setIsLoginModalOpen(false)}
+      />
 
-      <div>
-        <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
-          Meus Pré-pedidos
-        </h1>
-        <p className="text-xs sm:text-sm text-stone-500 mt-1">
-          Acompanhe o status de preparo, retire na feira e avalie os feirantes.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-8">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900 tracking-tight">
+            Meus Pré-pedidos
+          </h1>
+          <p className="text-xs sm:text-sm text-stone-500 mt-1">
+            Acompanhe o status de preparação dos seus itens e passe na feira para retirar no horário agendado.
+          </p>
+        </div>
+        <Link
+          href="/"
+          className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-feira-600 hover:bg-feira-700 text-white text-xs font-bold shadow-xs transition"
+        >
+          <ShoppingBag className="w-4 h-4" />
+          Fazer Novo Pedido
+        </Link>
       </div>
 
       {actionFeedback && (
-        <div className="p-3.5 rounded-2xl bg-stone-900 text-white text-xs font-semibold text-center animate-in fade-in">
-          {actionFeedback}
+        <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+          <span>{actionFeedback}</span>
         </div>
       )}
 
-      {loading ? (
-        <div className="space-y-4">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-44 bg-white rounded-3xl border border-stone-200 animate-pulse" />
-          ))}
-        </div>
-      ) : orders.length === 0 ? (
-        <div className="p-12 text-center bg-white rounded-3xl border border-stone-200 max-w-md mx-auto">
-          <Package className="w-12 h-12 text-stone-300 mx-auto mb-3" />
-          <h3 className="text-base font-bold text-stone-800">Você não possui pedidos</h3>
-          <p className="text-xs text-stone-500 mt-1">
-            Navegue pelas barracas da feira e reserve seus produtos frescos!
+      {orders.length === 0 ? (
+        <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center max-w-lg mx-auto shadow-xs">
+          <div className="w-16 h-16 rounded-2xl bg-feira-50 text-feira-600 flex items-center justify-center mx-auto mb-4">
+            <ShoppingBag className="w-8 h-8" />
+          </div>
+          <h3 className="text-lg font-bold text-stone-900">Você ainda não fez nenhum pedido</h3>
+          <p className="text-xs text-stone-500 mt-1 mb-6">
+            Visite as barracas dos feirantes e reserve seus produtos frescos para retirar sem filas na próxima feira!
           </p>
           <Link
             href="/"
-            className="mt-4 inline-block px-4 py-2 bg-feira-600 text-white rounded-xl text-xs font-semibold"
+            className="inline-flex items-center gap-2 px-5 py-2.5 bg-feira-600 hover:bg-feira-700 text-white text-xs font-bold rounded-xl shadow-xs transition"
           >
-            Explorar Feira
+            Explorar Produtos da Feira
           </Link>
         </div>
       ) : (
         <div className="space-y-4">
-          {orders.map(order => (
+          {orders.map((order) => (
             <div
               key={order.id}
-              className="bg-white rounded-3xl border border-stone-200/90 shadow-xs hover:shadow-md transition p-5 sm:p-6 space-y-4"
+              className="bg-white rounded-3xl border border-stone-200 shadow-xs p-5 sm:p-6 transition hover:border-stone-300 space-y-4"
             >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-stone-100">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-stone-100">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-feira-100 text-feira-800 flex items-center justify-center shrink-0">
+                  <div className="w-10 h-10 rounded-xl bg-feira-50 border border-feira-100 flex items-center justify-center text-feira-800 shrink-0">
                     <Store className="w-5 h-5" />
                   </div>
                   <div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-stone-900 text-sm">{order.vendorName}</span>
-                      <span className="text-xs font-mono font-bold text-stone-500 bg-stone-100 px-1.5 py-0.2 rounded">
-                        #{order.orderNumber}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-extrabold text-sm sm:text-base text-stone-900">
+                        Pedido #{order.orderNumber}
                       </span>
+                      {getStatusBadge(order.status)}
                     </div>
-                    <span className="text-[11px] text-stone-400">{formatDate(order.createdAt)}</span>
+                    <span className="text-xs text-stone-500 font-medium">
+                      Barraca: <strong className="text-stone-800">{order.vendorName || 'Feirante'}</strong> • {formatDate(order.createdAt)}
+                    </span>
                   </div>
                 </div>
 
-                <div>
-                  {getStatusBadge(order.status)}
+                <div className="text-right sm:self-center">
+                  <span className="text-xs text-stone-400 block font-bold">Total do Pedido</span>
+                  <span className="text-base sm:text-lg font-black text-feira-700">
+                    {formatCurrency(order.totalAmount)}
+                  </span>
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-1 text-xs">
-                <div className="space-y-1.5 bg-stone-50 p-3.5 rounded-2xl">
-                  <span className="font-bold text-[10px] uppercase tracking-wider text-stone-400 block mb-1">
+              {/* Items List & Details */}
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div className="md:col-span-7 space-y-2">
+                  <span className="text-[11px] uppercase font-bold text-stone-400 tracking-wide block">
                     Itens Reservados:
                   </span>
-                  {order.items.map(item => {
-                    const isWeighable = item.productUnit?.toLowerCase() === 'kg' || item.measuredWeight != null || item.quantity % 1 !== 0;
-                    return (
-                      <div key={item.id} className="flex justify-between items-start text-stone-700">
-                        <div>
-                          <span>
-                            {item.measuredWeight ? `${item.measuredWeight}kg` : (isWeighable ? `${formatWeight(item.quantity)} aprox.` : `${item.quantity}x`)} {item.productName}
+                  <div className="bg-stone-50 rounded-2xl p-3 divide-y divide-stone-200/60 border border-stone-200/60">
+                    {order.items?.map((item, idx) => {
+                      const hasWeight = item.measuredWeight !== null && item.measuredWeight !== undefined;
+                      return (
+                        <div key={idx} className="py-1.5 first:pt-0 last:pb-0 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold text-stone-800">{item.productName}</span>
+                            <span className="text-stone-400 text-[11px]">
+                              ({formatWeight(item.quantity)} x {formatCurrency(item.unitPrice)}/{item.productUnit || 'un'})
+                            </span>
+                            {hasWeight && (
+                              <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-bold">
+                                Pesado: {formatWeight(item.measuredWeight!)}
+                              </span>
+                            )}
+                          </div>
+                          <span className="font-semibold text-stone-900">
+                            {formatCurrency(item.subtotal || (item.unitPrice * item.quantity))}
                           </span>
-                          {item.measuredWeight != null && (
-                            <div className="text-[10px] text-amber-700 font-semibold flex items-center gap-1 mt-0.5">
-                              <Scale className="w-2.5 h-2.5 shrink-0" />
-                              <span>Peso aferido na balança: <strong>{item.measuredWeight} kg</strong></span>
-                            </div>
-                          )}
                         </div>
-                        <span className="font-semibold text-stone-900">{formatCurrency(item.subtotal)}</span>
-                      </div>
-                    );
-                  })}
-                  <div className="pt-2 border-t border-stone-200 flex justify-between font-extrabold text-stone-900">
-                    <span>Total:</span>
-                    <span className="text-feira-700">{formatCurrency(order.totalAmount)}</span>
+                      );
+                    })}
                   </div>
                 </div>
 
-                <div className="space-y-2 bg-stone-50 p-3.5 rounded-2xl flex flex-col justify-between">
+                <div className="md:col-span-5 space-y-2 text-xs bg-stone-50/70 p-3.5 rounded-2xl border border-stone-200/60 flex flex-col justify-between">
                   <div className="space-y-1.5">
-                    <div className="flex items-start gap-1.5 text-stone-600">
+                    <span className="text-[11px] uppercase font-bold text-stone-400 tracking-wide block">
+                      Local e Horário da Retirada:
+                    </span>
+                    <div className="flex items-start gap-1.5 text-stone-700 font-semibold">
                       <Calendar className="w-3.5 h-3.5 text-feira-600 shrink-0 mt-0.5" />
                       <span>{order.pickupDate}</span>
                     </div>
@@ -313,11 +310,11 @@ function ClientOrdersContent() {
                       <span>Pagamento:</span>
                       {order.paymentStatus === 'SIMULADO_APROVADO' ? (
                         <span className="inline-flex items-center gap-1 font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Mercado Pago (Pago)
+                          <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Online (Pago)
                         </span>
-                      ) : order.paymentStatus === 'PENDENTE' && (order.paymentMethod === 'MERCADO_PAGO_PIX' || order.paymentMethod === 'MERCADO_PAGO_CARTAO') ? (
+                      ) : order.paymentStatus === 'PENDENTE' && order.paymentMethod !== 'RETIRADA' ? (
                         <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200">
-                          <Clock className="w-3 h-3 text-amber-600" /> Mercado Pago (Pendente)
+                          <Clock className="w-3 h-3 text-amber-600" /> Online (Pendente)
                         </span>
                       ) : (
                         <strong className="text-stone-800">Presencial na Retirada</strong>
@@ -338,10 +335,10 @@ function ClientOrdersContent() {
                   {order.paymentStatus === 'PENDENTE' && order.status !== 'CANCELADO' && (
                     <button
                       onClick={() => setPayOrder(order)}
-                      className="px-3.5 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                      className="px-3.5 py-1.5 rounded-xl bg-feira-600 hover:bg-feira-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
                     >
                       <CreditCard className="w-3.5 h-3.5" />
-                      <span>Pagar no Mercado Pago</span>
+                      <span>Pagar Agora</span>
                     </button>
                   )}
 
@@ -405,6 +402,32 @@ function ClientOrdersContent() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* Payment Modal for Pending Orders */}
+      {payOrder && (
+        <MercadoPagoModal
+          orderId={payOrder.id}
+          orderNumber={payOrder.orderNumber}
+          totalAmount={payOrder.totalAmount}
+          clientId={currentUser?.id || 'user-client-1'}
+          clientName={currentUser?.name || payOrder.clientName || 'Cliente Consumidor'}
+          clientEmail={currentUser?.email || payOrder.clientEmail || 'cliente@feirae.com'}
+          onSuccess={() => {
+            setPayOrder(null);
+            fetchOrders();
+            setActionFeedback('🎉 Pagamento aprovado com sucesso!');
+            setTimeout(() => setActionFeedback(null), 5000);
+          }}
+          onClose={() => {
+            setPayOrder(null);
+            fetchOrders();
+          }}
+          onCancelOrder={() => {
+            setPayOrder(null);
+            fetchOrders();
+          }}
+        />
       )}
 
       {/* Pickup Pass Modal */}

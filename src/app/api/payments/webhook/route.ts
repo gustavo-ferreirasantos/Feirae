@@ -29,8 +29,8 @@ export async function POST(request: Request) {
           await prisma.notification.create({
             data: {
               userId: dbOrder.clientId,
-              title: 'Pagamento Mercado Pago Aprovado (Sandbox)',
-              message: `O pagamento do seu pedido #${dbOrder.orderNumber} foi confirmado com sucesso via Mercado Pago.`,
+              title: 'Pagamento Aprovado',
+              message: `O pagamento do seu pedido #${dbOrder.orderNumber} foi confirmado com sucesso.`,
               type: 'ORDER_STATUS',
               orderId: dbOrder.id,
             },
@@ -50,8 +50,8 @@ export async function POST(request: Request) {
       if (status === 'approved') {
         store.addNotification({
           userId: order.clientId,
-          title: 'Pagamento Mercado Pago Aprovado (Sandbox)',
-          message: `O pagamento simulado do seu pedido #${order.orderNumber} foi confirmado com sucesso.`,
+          title: 'Pagamento Aprovado',
+          message: `O pagamento do seu pedido #${order.orderNumber} foi confirmado com sucesso.`,
           type: 'ORDER_STATUS',
           orderId: order.id,
         });

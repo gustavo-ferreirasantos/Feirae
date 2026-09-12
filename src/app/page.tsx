@@ -391,7 +391,7 @@ export default function HomePage() {
                 </div>
                 <h4 className="font-bold text-sm text-stone-100">Reserve sem Pagar Agora</h4>
                 <p className="text-stone-400 leading-relaxed">
-                  Defina o horário de retirada na feira. Pague presencialmente ou simule no Mercado Pago Sandbox.
+                  Defina o horário de retirada na feira. Pague presencialmente ou online via Pix e Cartão.
                 </p>
               </div>
 

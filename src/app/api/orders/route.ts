@@ -2,47 +2,117 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { store } from '@/lib/store';
 
+export const dynamic = 'force-dynamic';
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const clientId = searchParams.get('clientId') || undefined;
   const vendorId = searchParams.get('vendorId') || undefined;
 
+  let dbOrders: any[] = [];
   try {
     const whereClause: any = {};
-    if (clientId) whereClause.clientId = clientId;
-    if (vendorId) {
+
+    if (clientId) {
+      // Find all possible DB user IDs associated with this client
+      const matchingUsers = await prisma.user.findMany({
+        where: {
+          OR: [
+            { id: clientId },
+            { email: { contains: 'cliente', mode: 'insensitive' } },
+            { email: { contains: clientId.replace('user-', ''), mode: 'insensitive' } },
+            { role: 'CLIENT' },
+          ],
+        },
+        select: { id: true, email: true },
+      }).catch(() => []);
+
+      const clientIds = [clientId, ...matchingUsers.map(u => u.id)];
+      const clientEmails = matchingUsers.map(u => u.email).filter(Boolean);
+
       whereClause.OR = [
-        { vendorId: vendorId },
-        { vendor: { slug: vendorId } },
-        { vendor: { userId: vendorId } },
+        { clientId: { in: clientIds } },
+        ...(clientEmails.length > 0 ? [{ clientEmail: { in: clientEmails } }] : []),
       ];
     }
 
-    const dbOrders = await prisma.order.findMany({
+    if (vendorId) {
+      const matchingVendors = await prisma.vendor.findMany({
+        where: {
+          OR: [
+            { id: vendorId },
+            { slug: vendorId },
+            { userId: vendorId },
+          ],
+        },
+        select: { id: true, userId: true },
+      }).catch(() => []);
+
+      const vendorIds = [vendorId, ...matchingVendors.map(v => v.id), ...matchingVendors.map(v => v.userId)];
+      
+      const vendorOr = [
+        { vendorId: { in: vendorIds } },
+        { vendor: { id: { in: vendorIds } } },
+        { vendor: { userId: { in: vendorIds } } },
+      ];
+
+      if (whereClause.OR) {
+        whereClause.AND = [
+          { OR: whereClause.OR },
+          { OR: vendorOr }
+        ];
+        delete whereClause.OR;
+      } else {
+        whereClause.OR = vendorOr;
+      }
+    }
+
+    const fetchedDbOrders = await prisma.order.findMany({
       where: whereClause,
       include: {
         items: true,
-        vendor: { select: { businessName: true, fairLocation: true, category: true } },
-        client: { select: { name: true, phone: true, email: true } },
+        vendor: { select: { id: true, businessName: true, fairLocation: true, category: true, slug: true, userId: true } },
+        client: { select: { id: true, name: true, phone: true, email: true } },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    if (dbOrders && dbOrders.length > 0) {
-      return NextResponse.json(
-        dbOrders.map(o => ({
-          ...o,
-          vendorName: o.vendor?.businessName,
-          items: o.items,
-        }))
-      );
+    if (fetchedDbOrders && fetchedDbOrders.length > 0) {
+      dbOrders = fetchedDbOrders.map(o => ({
+        ...o,
+        vendorName: o.vendor?.businessName,
+        items: o.items,
+      }));
     }
   } catch (err) {
     console.warn('Prisma get orders fallback to store:', err);
   }
 
-  const orders = store.getOrders({ clientId, vendorId });
-  return NextResponse.json(orders);
+  // Get in-memory orders
+  const memoryOrders = store.getOrders({ clientId, vendorId });
+
+  // Merge and deduplicate by ID and orderNumber
+  const ordersMap = new Map<string, any>();
+
+  // Add DB orders first
+  dbOrders.forEach(o => {
+    const key = o.id || o.orderNumber;
+    ordersMap.set(key, o);
+  });
+
+  // Add memory orders if not already in DB
+  memoryOrders.forEach(o => {
+    const key = o.id || o.orderNumber;
+    if (!ordersMap.has(key)) {
+      ordersMap.set(key, o);
+    }
+  });
+
+  const mergedOrders = Array.from(ordersMap.values()).sort(
+    (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+  );
+
+  return NextResponse.json(mergedOrders);
 }
 
 export async function POST(request: Request) {
