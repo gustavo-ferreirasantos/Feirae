@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { verifyPassword } from '@/lib/auth';
+import { store } from '@/lib/store';
 import { INITIAL_USERS, INITIAL_VENDORS } from '@/lib/mock-data';
 
 export async function POST(request: Request) {
