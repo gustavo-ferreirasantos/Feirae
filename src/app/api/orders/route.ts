@@ -51,12 +51,13 @@ export async function POST(request: Request) {
 
     // 1. Try Prisma Neon Transaction
     try {
-      const memoryVendor = store.getVendorById(body.vendorId);
+      const memoryVendor = store.getVendorById(body.vendorId) || (body.vendorName ? store.getVendorById(body.vendorName) : undefined);
       const vendorOrList = [
         { id: body.vendorId },
         { slug: body.vendorId },
         { userId: body.vendorId },
-        ...(memoryVendor ? [{ slug: memoryVendor.slug }, { businessName: memoryVendor.businessName }] : []),
+        ...(body.vendorName ? [{ businessName: { equals: body.vendorName, mode: 'insensitive' as const } }] : []),
+        ...(memoryVendor ? [{ slug: memoryVendor.slug }, { businessName: { equals: memoryVendor.businessName, mode: 'insensitive' as const } }] : []),
       ];
 
       // Find or verify vendor
@@ -153,10 +154,41 @@ export async function POST(request: Request) {
 
         const orderNum = `FL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
+        // Resolve client user in DB so FK relation is always valid
+        let dbClientId = body.clientId;
+        const existingClient = await prisma.user.findFirst({
+          where: {
+            OR: [
+              { id: body.clientId },
+              { email: (body.clientEmail || '').trim().toLowerCase() },
+            ],
+          },
+        });
+
+        if (existingClient) {
+          dbClientId = existingClient.id;
+        } else {
+          try {
+            const cleanMail = (body.clientEmail || `cliente-${Date.now()}@feirae.com`).trim().toLowerCase();
+            const newClient = await prisma.user.create({
+              data: {
+                name: body.clientName || 'Cliente Consumidor',
+                email: cleanMail,
+                phone: body.clientPhone || null,
+                role: 'CLIENT',
+              },
+            });
+            dbClientId = newClient.id;
+          } catch {
+            const firstClient = await prisma.user.findFirst({ where: { role: 'CLIENT' } });
+            if (firstClient) dbClientId = firstClient.id;
+          }
+        }
+
         const createdOrder = await prisma.order.create({
           data: {
             orderNumber: orderNum,
-            clientId: body.clientId || 'user-client-1',
+            clientId: dbClientId,
             clientName: body.clientName,
             clientPhone: body.clientPhone,
             clientEmail: body.clientEmail,

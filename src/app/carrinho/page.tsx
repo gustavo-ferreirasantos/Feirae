@@ -129,6 +129,7 @@ export default function CartCheckoutPage() {
           clientPhone: currentUser?.phone || '(11) 98765-4321',
           clientEmail: currentUser?.email || 'cliente@feirae.com',
           vendorId: vendorId,
+          vendorName: vendorName || undefined,
           items: items.map(i => ({
             productId: i.product.id,
             quantity: i.quantity,
