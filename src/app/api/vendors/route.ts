@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -17,16 +18,16 @@ export async function GET(request: Request) {
           select: { products: true, orders: true, reviews: true },
         },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [
+        { isFeatured: 'desc' },
+        { featuredOrder: 'asc' },
+        { rating: 'desc' },
+      ],
     });
 
-    if (dbVendors && dbVendors.length > 0) {
-      return NextResponse.json(dbVendors);
-    }
-  } catch (err) {
-    console.warn('Prisma get vendors fallback to store:', err);
+    return NextResponse.json(dbVendors);
+  } catch (err: any) {
+    console.error('Prisma get vendors error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar feirantes do banco de dados.' }, { status: 500 });
   }
-
-  const vendors = store.getVendors();
-  return NextResponse.json(vendors);
 }

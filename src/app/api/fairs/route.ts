@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET() {
   try {
@@ -14,17 +15,13 @@ export async function GET() {
       orderBy: { name: 'asc' },
     });
 
-    if (dbFairs && dbFairs.length > 0) {
-      const formatted = dbFairs.map(f => ({
-        ...f,
-        vendorCount: f._count?.vendors ?? 0,
-      }));
-      return NextResponse.json(formatted);
-    }
-  } catch (err) {
-    console.warn('Prisma get fairs fallback:', err);
+    const formatted = dbFairs.map(f => ({
+      ...f,
+      vendorCount: f._count?.vendors ?? 0,
+    }));
+    return NextResponse.json(formatted);
+  } catch (err: any) {
+    console.error('Prisma get fairs error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar feiras do banco de dados.' }, { status: 500 });
   }
-
-  const fairs = store.getFairs();
-  return NextResponse.json(fairs);
 }

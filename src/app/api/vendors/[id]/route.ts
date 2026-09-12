@@ -1,18 +1,17 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
   { params }: { params: { id: string } }
 ) {
   try {
-    const memoryVendor = store.getVendorById(params.id);
     const vendorOrList = [
       { id: params.id },
       { slug: params.id },
       { userId: params.id },
-      ...(memoryVendor ? [{ slug: memoryVendor.slug }, { businessName: memoryVendor.businessName }] : []),
     ];
 
     const dbVendor = await prisma.vendor.findFirst({
@@ -27,32 +26,20 @@ export async function GET(
       },
     });
 
-    if (dbVendor) {
-      return NextResponse.json({
-        vendor: dbVendor,
-        products: dbVendor.products,
-        pickupWindows: dbVendor.pickupWindows,
-        reviews: dbVendor.reviews,
-      });
+    if (!dbVendor) {
+      return NextResponse.json({ error: 'Feirante não encontrado no banco de dados.' }, { status: 404 });
     }
-  } catch (err) {
-    console.warn('Prisma get vendor by id fallback:', err);
-  }
 
-  const vendor = store.getVendorById(params.id);
-  if (!vendor) {
-    return NextResponse.json({ error: 'Feirante não encontrado.' }, { status: 404 });
+    return NextResponse.json({
+      vendor: dbVendor,
+      products: dbVendor.products,
+      pickupWindows: dbVendor.pickupWindows,
+      reviews: dbVendor.reviews,
+    });
+  } catch (err: any) {
+    console.error('Prisma get vendor by id error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar dados da barraca no banco de dados.' }, { status: 500 });
   }
-  const products = store.getProducts(vendor.id);
-  const pickupWindows = store.getPickupWindows(vendor.id);
-  const reviews = store.getReviews(vendor.id);
-
-  return NextResponse.json({
-    vendor,
-    products,
-    pickupWindows,
-    reviews,
-  });
 }
 
 export async function PATCH(
@@ -62,49 +49,50 @@ export async function PATCH(
   try {
     const body = await request.json();
 
-    try {
-      const dbUpdated = await prisma.vendor.update({
-        where: { id: params.id },
-        data: {
-          ...(body.active !== undefined && { active: body.active }),
-          ...(body.isSubscriber !== undefined && { isSubscriber: body.isSubscriber }),
-          ...(body.plan !== undefined && { plan: body.plan }),
-          ...(body.maxProducts !== undefined && { maxProducts: body.maxProducts }),
-          ...(body.commissionRate !== undefined && { commissionRate: body.commissionRate }),
-          ...(body.description !== undefined && { description: body.description }),
-          ...(body.fairLocation !== undefined && { fairLocation: body.fairLocation }),
-          ...(body.boothNumber !== undefined && { boothNumber: body.boothNumber }),
-          ...(body.category !== undefined && { category: body.category }),
-          ...(body.businessName !== undefined && { businessName: body.businessName }),
-          ...(body.whatsappPhone !== undefined && { whatsappPhone: body.whatsappPhone }),
-          ...(body.coverImage !== undefined && { coverImage: body.coverImage }),
-          ...(body.avatar !== undefined && { avatar: body.avatar }),
-          ...(body.isFeatured !== undefined && { isFeatured: Boolean(body.isFeatured) }),
-          ...(body.featuredUntil !== undefined && { featuredUntil: body.featuredUntil ? new Date(body.featuredUntil) : null }),
-          ...(body.featuredOrder !== undefined && { featuredOrder: Number(body.featuredOrder) }),
-          ...(body.isCertifiedOrganic !== undefined && { isCertifiedOrganic: Boolean(body.isCertifiedOrganic) }),
-          ...(body.certificationDocUrl !== undefined && { certificationDocUrl: body.certificationDocUrl }),
-          ...(body.certStatus !== undefined && { certStatus: body.certStatus }),
-          ...(body.certRegistrationNumber !== undefined && { certRegistrationNumber: body.certRegistrationNumber }),
-          ...(body.certIssuingBody !== undefined && { certIssuingBody: body.certIssuingBody }),
-          ...(body.certSubmittedAt !== undefined && { certSubmittedAt: body.certSubmittedAt ? new Date(body.certSubmittedAt) : null }),
-          ...(body.certReviewedAt !== undefined && { certReviewedAt: body.certReviewedAt ? new Date(body.certReviewedAt) : null }),
-          ...(body.certRejectionReason !== undefined && { certRejectionReason: body.certRejectionReason }),
-        },
-      });
+    const existingVendor = await prisma.vendor.findFirst({
+      where: {
+        OR: [{ id: params.id }, { slug: params.id }, { userId: params.id }],
+      },
+    });
 
-      store.updateVendor(params.id, body);
-      return NextResponse.json(dbUpdated);
-    } catch (dbErr) {
-      console.warn('Prisma update vendor fallback:', dbErr);
-    }
-
-    const updatedVendor = store.updateVendor(params.id, body);
-    if (!updatedVendor) {
+    if (!existingVendor) {
       return NextResponse.json({ error: 'Feirante não encontrado para atualização.' }, { status: 404 });
     }
-    return NextResponse.json(updatedVendor);
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro ao atualizar dados da barraca.' }, { status: 500 });
+
+    const dbUpdated = await prisma.vendor.update({
+      where: { id: existingVendor.id },
+      data: {
+        ...(body.active !== undefined && { active: body.active }),
+        ...(body.isSubscriber !== undefined && { isSubscriber: body.isSubscriber }),
+        ...(body.plan !== undefined && { plan: body.plan }),
+        ...(body.maxProducts !== undefined && { maxProducts: body.maxProducts }),
+        ...(body.commissionRate !== undefined && { commissionRate: body.commissionRate }),
+        ...(body.description !== undefined && { description: body.description }),
+        ...(body.fairLocation !== undefined && { fairLocation: body.fairLocation }),
+        ...(body.boothNumber !== undefined && { boothNumber: body.boothNumber }),
+        ...(body.category !== undefined && { category: body.category }),
+        ...(body.businessName !== undefined && { businessName: body.businessName }),
+        ...(body.whatsappPhone !== undefined && { whatsappPhone: body.whatsappPhone }),
+        ...(body.coverImage !== undefined && { coverImage: body.coverImage }),
+        ...(body.avatar !== undefined && { avatar: body.avatar }),
+        ...(body.isFeatured !== undefined && { isFeatured: Boolean(body.isFeatured) }),
+        ...(body.featuredUntil !== undefined && { featuredUntil: body.featuredUntil ? new Date(body.featuredUntil) : null }),
+        ...(body.featuredOrder !== undefined && { featuredOrder: Number(body.featuredOrder) }),
+        ...(body.isCertifiedOrganic !== undefined && { isCertifiedOrganic: Boolean(body.isCertifiedOrganic) }),
+        ...(body.certificationDocUrl !== undefined && { certificationDocUrl: body.certificationDocUrl }),
+        ...(body.certStatus !== undefined && { certStatus: body.certStatus }),
+        ...(body.certRegistrationNumber !== undefined && { certRegistrationNumber: body.certRegistrationNumber }),
+        ...(body.certIssuingBody !== undefined && { certIssuingBody: body.certIssuingBody }),
+        ...(body.certSubmittedAt !== undefined && { certSubmittedAt: body.certSubmittedAt ? new Date(body.certSubmittedAt) : null }),
+        ...(body.certReviewedAt !== undefined && { certReviewedAt: body.certReviewedAt ? new Date(body.certReviewedAt) : null }),
+        ...(body.certRejectionReason !== undefined && { certRejectionReason: body.certRejectionReason }),
+      },
+    });
+
+    return NextResponse.json(dbUpdated);
+  } catch (error: any) {
+    console.error('Error updating vendor:', error);
+    return NextResponse.json({ error: 'Erro ao atualizar dados da barraca no banco de dados.' }, { status: 500 });
   }
 }
+

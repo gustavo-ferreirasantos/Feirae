@@ -86,7 +86,7 @@ interface FinancialStats {
 }
 
 export default function VendorDashboardPage() {
-  const { currentUser, currentVendor, updateCurrentVendor } = useUser();
+  const { currentUser, currentVendor, updateCurrentVendor, availableVendors } = useUser();
   const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL' | 'CERTIFICATIONS'>('KANBAN');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -179,7 +179,8 @@ export default function VendorDashboardPage() {
   const [reviewFilter, setReviewFilter] = useState<'ALL' | 'PENDING' | 'ANSWERED'>('ALL');
 
   const isVendor = currentUser?.role === 'VENDOR';
-  const activeVendorId = currentVendor?.id || 'vendor-1';
+  const activeVendor = currentVendor || availableVendors.find(v => v.userId === currentUser?.id) || (availableVendors.length > 0 ? availableVendors[0] : null);
+  const activeVendorId = activeVendor?.id || currentVendor?.id || '';
 
   // Synchronize bio and certification initial state when currentVendor changes
   useEffect(() => {
@@ -237,18 +238,19 @@ export default function VendorDashboardPage() {
   };
 
   const loadVendorData = async () => {
-    if (!isVendor) {
+    const vId = activeVendorId || currentVendor?.id;
+    if (!vId) {
       setLoading(false);
       return;
     }
     try {
       const [ordRes, prodRes, winRes, revRes, fairsRes, vfRes] = await Promise.all([
-        fetch('/api/orders?vendorId=' + activeVendorId),
-        fetch('/api/products?vendorId=' + activeVendorId),
-        fetch(`/api/vendors/${activeVendorId}/pickup-windows`),
-        fetch(`/api/reviews?vendorId=${activeVendorId}`),
+        fetch('/api/orders?vendorId=' + vId),
+        fetch('/api/products?vendorId=' + vId),
+        fetch(`/api/vendors/${vId}/pickup-windows`),
+        fetch(`/api/reviews?vendorId=${vId}`),
         fetch('/api/fairs'),
-        fetch(`/api/vendors/${activeVendorId}/fairs`),
+        fetch(`/api/vendors/${vId}/fairs`),
       ]);
       if (ordRes.ok) setOrders(await ordRes.json());
       if (prodRes.ok) setProducts(await prodRes.json());
@@ -276,10 +278,11 @@ export default function VendorDashboardPage() {
   };
 
   const fetchFinanceStats = async (date: string = financeDateFilter) => {
-    if (!isVendor) return;
+    const vId = activeVendorId || currentVendor?.id;
+    if (!vId) return;
     setLoadingFinance(true);
     try {
-      const url = `/api/vendors/finance/stats?vendorId=${activeVendorId}${date !== 'ALL' ? `&date=${encodeURIComponent(date)}` : ''}`;
+      const url = `/api/vendors/finance/stats?vendorId=${vId}${date !== 'ALL' ? `&date=${encodeURIComponent(date)}` : ''}`;
       const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
@@ -372,24 +375,21 @@ export default function VendorDashboardPage() {
   }, [activeVendorId, isVendor, financeDateFilter]);
 
   const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
-    setOrders(prev => prev.map(o => o.id === orderId ? { ...o, status } : o));
+    setOrders(prev => prev.map(o => (o.id === orderId || o.orderNumber === orderId || o.orderNumber === orderId.replace('#', '')) ? { ...o, status } : o));
 
     try {
-      const res = await fetch('/api/orders/' + orderId, {
+      const res = await fetch('/api/orders/' + encodeURIComponent(orderId), {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       });
       if (res.ok) {
         const updated = await res.json();
-        setOrders(prev => prev.map(o => o.id === orderId ? { ...o, ...updated } : o));
+        setOrders(prev => prev.map(o => (o.id === orderId || o.id === updated.id || o.orderNumber === updated.orderNumber) ? { ...o, ...updated } : o));
         fetchFinanceStats(financeDateFilter);
-      } else {
-        loadVendorData();
       }
     } catch (err) {
       console.error('Erro ao atualizar status do pedido:', err);
-      loadVendorData();
     }
   };
 

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(
   request: Request,
@@ -12,15 +13,11 @@ export async function GET(
       include: { fairLocation: true },
     });
 
-    if (dbVendorFairs && dbVendorFairs.length > 0) {
-      return NextResponse.json(dbVendorFairs);
-    }
-  } catch (err) {
-    console.warn('Prisma get vendor fairs fallback:', err);
+    return NextResponse.json(dbVendorFairs);
+  } catch (err: any) {
+    console.error('Prisma get vendor fairs error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar feiras do feirante.' }, { status: 500 });
   }
-
-  const vendorFairs = store.getVendorFairs(params.id);
-  return NextResponse.json(vendorFairs);
 }
 
 export async function POST(
@@ -38,43 +35,34 @@ export async function POST(
       );
     }
 
-    try {
-      // Prisma transaction
-      await prisma.$transaction(async (tx) => {
-        await tx.vendorFairLocation.deleteMany({
-          where: { vendorId: params.id },
-        });
+    await prisma.$transaction(async (tx) => {
+      await tx.vendorFairLocation.deleteMany({
+        where: { vendorId: params.id },
+      });
 
-        for (const fa of fairAssignments) {
-          if (fa.fairLocationId) {
-            await tx.vendorFairLocation.create({
-              data: {
-                vendorId: params.id,
-                fairLocationId: fa.fairLocationId,
-                boothNumber: fa.boothNumber || null,
-                assignedDays: fa.assignedDays || null,
-                active: true,
-              },
-            });
-          }
+      for (const fa of fairAssignments) {
+        if (fa.fairLocationId) {
+          await tx.vendorFairLocation.create({
+            data: {
+              vendorId: params.id,
+              fairLocationId: fa.fairLocationId,
+              boothNumber: fa.boothNumber || null,
+              assignedDays: fa.assignedDays || null,
+              active: true,
+            },
+          });
         }
-      });
+      }
+    });
 
-      const updated = await prisma.vendorFairLocation.findMany({
-        where: { vendorId: params.id, active: true },
-        include: { fairLocation: true },
-      });
+    const updated = await prisma.vendorFairLocation.findMany({
+      where: { vendorId: params.id, active: true },
+      include: { fairLocation: true },
+    });
 
-      store.setVendorFairs(params.id, fairAssignments);
-      return NextResponse.json(updated);
-    } catch (dbErr) {
-      console.warn('Prisma set vendor fairs fallback:', dbErr);
-    }
-
-    const updatedStore = store.setVendorFairs(params.id, fairAssignments);
-    return NextResponse.json(updatedStore);
-  } catch (err) {
+    return NextResponse.json(updated);
+  } catch (err: any) {
     console.error('Error in POST /api/vendors/[id]/fairs:', err);
-    return NextResponse.json({ error: 'Erro ao salvar feiras do feirante.' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao salvar feiras do feirante no banco de dados.' }, { status: 500 });
   }
 }

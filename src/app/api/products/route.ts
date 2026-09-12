@@ -1,12 +1,14 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const vendorId = searchParams.get('vendorId') || undefined;
   const category = searchParams.get('category') || undefined;
   const search = searchParams.get('search') || undefined;
+  const fairId = searchParams.get('fairId') || undefined;
   const includeInactive = searchParams.get('includeInactive') === 'true';
 
   try {
@@ -17,14 +19,45 @@ export async function GET(request: Request) {
       }),
     };
 
-    if (vendorId) whereClause.vendorId = vendorId;
-    if (category && category !== 'Todos') whereClause.category = { equals: category, mode: 'insensitive' };
+    if (vendorId && vendorId !== 'ALL') {
+      const matchingVendors = await prisma.vendor.findMany({
+        where: {
+          OR: [{ id: vendorId }, { slug: vendorId }, { userId: vendorId }],
+        },
+        select: { id: true },
+      }).catch(() => []);
+      const vIds = Array.from(new Set([vendorId, ...matchingVendors.map(v => v.id)]));
+      whereClause.vendorId = { in: vIds };
+    }
+
+    if (category && category !== 'Todos') {
+      whereClause.category = { equals: category, mode: 'insensitive' };
+    }
+
     if (search) {
       whereClause.OR = [
         { name: { contains: search, mode: 'insensitive' } },
         { description: { contains: search, mode: 'insensitive' } },
         { category: { contains: search, mode: 'insensitive' } },
+        { vendor: { businessName: { contains: search, mode: 'insensitive' } } },
       ];
+    }
+
+    if (fairId && fairId !== 'ALL') {
+      const fairVendors = await prisma.vendorFairLocation.findMany({
+        where: {
+          OR: [{ fairLocationId: fairId }, { fairLocation: { slug: fairId } }],
+          active: true,
+        },
+        select: { vendorId: true },
+      }).catch(() => []);
+
+      const fairVendorIds = fairVendors.map(fv => fv.vendorId);
+      if (whereClause.vendorId?.in) {
+        whereClause.vendorId.in = whereClause.vendorId.in.filter((id: string) => fairVendorIds.includes(id));
+      } else {
+        whereClause.vendorId = { in: fairVendorIds };
+      }
     }
 
     const dbProducts = await prisma.product.findMany({
@@ -39,63 +72,58 @@ export async function GET(request: Request) {
         vendorName: p.vendor?.businessName,
       }))
     );
-  } catch (err) {
-    console.warn('Prisma get products fallback to store:', err);
+  } catch (err: any) {
+    console.error('Prisma get products error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar produtos do banco de dados.' }, { status: 500 });
   }
-
-  // Fallback to in-memory store
-  const products = store.getProducts(vendorId, category, search);
-  return NextResponse.json(products);
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
     
-    // 1. Try Prisma Neon
-    try {
-      const vendor = await prisma.vendor.findUnique({ where: { id: body.vendorId } });
-      if (vendor) {
-        const activeCount = await prisma.product.count({
-          where: { vendorId: body.vendorId, isActive: true },
-        });
-        const isPro = vendor.plan === 'PRO' || vendor.isSubscriber;
-        const maxLimit = vendor.maxProducts || 5;
+    const vendor = await prisma.vendor.findFirst({
+      where: {
+        OR: [{ id: body.vendorId }, { slug: body.vendorId }, { userId: body.vendorId }],
+      },
+    });
 
-        if (!isPro && activeCount >= maxLimit) {
-          return NextResponse.json({
-            error: `Limite de ${maxLimit} produtos do Plano Gratuito atingido. Faça upgrade para o Plano Feirante Pro para cadastrar produtos ilimitados e ter taxa 0%!`,
-          }, { status: 403 });
-        }
-
-        const created = await prisma.product.create({
-          data: {
-            vendorId: body.vendorId,
-            name: body.name,
-            description: body.description,
-            category: body.category,
-            unit: body.unit || 'kg',
-            price: Number(body.price),
-            stock: Number(body.stock),
-            imageUrl: body.imageUrl || null,
-            isOrganic: Boolean(body.isOrganic),
-            isWeighable: Boolean(body.isWeighable),
-            isActive: true,
-          },
-        });
-        return NextResponse.json(created, { status: 201 });
-      }
-    } catch (dbErr) {
-      console.warn('Prisma create product fallback:', dbErr);
+    if (!vendor) {
+      return NextResponse.json({ error: 'Feirante não encontrado no banco de dados.' }, { status: 404 });
     }
 
-    try {
-      const newProd = store.addProduct(body);
-      return NextResponse.json(newProd, { status: 201 });
-    } catch (storeErr: any) {
-      return NextResponse.json({ error: storeErr?.message || 'Limite de produtos excedido.' }, { status: 403 });
+    const activeCount = await prisma.product.count({
+      where: { vendorId: vendor.id, isActive: true },
+    });
+    const isPro = vendor.plan === 'PRO' || vendor.isSubscriber;
+    const maxLimit = vendor.maxProducts || 5;
+
+    if (!isPro && activeCount >= maxLimit) {
+      return NextResponse.json({
+        error: `Limite de ${maxLimit} produtos do Plano Gratuito atingido. Faça upgrade para o Plano Feirante Pro para cadastrar produtos ilimitados e ter taxa 0%!`,
+      }, { status: 403 });
     }
-  } catch (error) {
-    return NextResponse.json({ error: 'Erro ao criar produto.' }, { status: 500 });
+
+    const created = await prisma.product.create({
+      data: {
+        vendorId: vendor.id,
+        name: body.name,
+        description: body.description,
+        category: body.category,
+        unit: body.unit || 'kg',
+        price: Number(body.price),
+        stock: Number(body.stock),
+        imageUrl: body.imageUrl || null,
+        isOrganic: Boolean(body.isOrganic),
+        isWeighable: Boolean(body.isWeighable),
+        isActive: true,
+      },
+    });
+
+    return NextResponse.json(created, { status: 201 });
+  } catch (error: any) {
+    console.error('Error creating product in DB:', error);
+    return NextResponse.json({ error: 'Erro ao criar produto no banco de dados.' }, { status: 500 });
   }
 }
+

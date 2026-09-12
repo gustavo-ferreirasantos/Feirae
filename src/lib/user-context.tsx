@@ -2,7 +2,6 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { User, Vendor, Role } from '@/types';
-import { INITIAL_USERS, INITIAL_VENDORS } from './mock-data';
 
 interface UserContextType {
   currentUser: User | null;
@@ -20,13 +19,63 @@ interface UserContextType {
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
 export function UserProvider({ children }: { children: React.ReactNode }) {
-  // Starts logged out (null) by default
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [currentVendor, setCurrentVendor] = useState<Vendor | null>(null);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Restore session from localStorage if present
+  const [availableUsers, setAvailableUsers] = useState<User[]>([]);
+  const [availableVendors, setAvailableVendors] = useState<Vendor[]>([]);
+
+  // Fetch real users and vendors from PostgreSQL database on load
+  const loadDatabaseAccounts = async () => {
+    try {
+      const res = await fetch('/api/auth');
+      if (res.ok) {
+        const data = await res.json();
+        const dbUsers: User[] = data.users || [];
+        const dbVendors: Vendor[] = data.vendors || [];
+
+        setAvailableUsers(dbUsers);
+        setAvailableVendors(dbVendors);
+
+        // Validate any session stored in localStorage against real database records
+        const stored = localStorage.getItem('feirae_user_session');
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            const userInDb = dbUsers.find(u => 
+              u.id === parsed?.user?.id || 
+              (parsed?.user?.email && u.email?.toLowerCase() === parsed.user.email.toLowerCase())
+            );
+
+            if (!userInDb) {
+              // The user stored in localStorage does not exist in the database (e.g. old mock or reset DB)
+              console.warn('Limpando sessão antiga/inexistente no banco de dados...');
+              localStorage.removeItem('feirae_user_session');
+              setCurrentUser(null);
+              setCurrentVendor(null);
+            } else {
+              const vendorInDb = dbVendors.find(v => v.userId === userInDb.id);
+              setCurrentUser(userInDb);
+              setCurrentVendor(vendorInDb || null);
+              localStorage.setItem('feirae_user_session', JSON.stringify({ user: userInDb, vendor: vendorInDb || null }));
+            }
+          } catch {
+            localStorage.removeItem('feirae_user_session');
+            setCurrentUser(null);
+            setCurrentVendor(null);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    } finally {
+      setIsLoaded(true);
+    }
+  };
+
   useEffect(() => {
+    // Initial load from storage while DB accounts are queried
     try {
       const stored = localStorage.getItem('feirae_user_session');
       if (stored) {
@@ -38,30 +87,45 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       }
     } catch {
       // ignore
-    } finally {
-      setIsLoaded(true);
     }
+    loadDatabaseAccounts();
   }, []);
 
-  const switchUser = (role: Role, vendorId?: string) => {
-    if (role === 'CLIENT') {
-      const user = INITIAL_USERS[0];
-      setCurrentUser(user);
-      setCurrentVendor(null);
-      localStorage.setItem('feirae_user_session', JSON.stringify({ user, vendor: null }));
+  const switchUser = async (role: Role, vendorId?: string) => {
+    let targetEmail = 'maria.oliveira@email.com';
+    if (role === 'ADMIN') {
+      targetEmail = 'admin@feirae.com';
     } else if (role === 'VENDOR') {
-      const selectedVendor = vendorId 
-        ? INITIAL_VENDORS.find(v => v.id === vendorId) || INITIAL_VENDORS[0]
-        : INITIAL_VENDORS[0];
-      const vendorUser = INITIAL_USERS.find(u => u.id === selectedVendor.userId) || INITIAL_USERS[1];
-      setCurrentUser(vendorUser);
-      setCurrentVendor(selectedVendor);
-      localStorage.setItem('feirae_user_session', JSON.stringify({ user: vendorUser, vendor: selectedVendor }));
-    } else if (role === 'ADMIN') {
-      const adminUser = INITIAL_USERS[4];
-      setCurrentUser(adminUser);
-      setCurrentVendor(null);
-      localStorage.setItem('feirae_user_session', JSON.stringify({ user: adminUser, vendor: null }));
+      if (vendorId) {
+        const matchedVendor = availableVendors.find(v => v.id === vendorId || v.slug === vendorId || v.userId === vendorId);
+        if (matchedVendor) {
+          const matchedUser = availableUsers.find(u => u.id === matchedVendor.userId);
+          if (matchedUser?.email) {
+            targetEmail = matchedUser.email;
+          }
+        } else if (vendorId === 'vendor-2') {
+          targetEmail = 'neusa.doces@feirae.com';
+        } else if (vendorId === 'vendor-3') {
+          targetEmail = 'antonio.queijos@feirae.com';
+        } else {
+          targetEmail = 'ze.organicos@feirae.com';
+        }
+      } else {
+        const firstVendor = availableVendors[0];
+        if (firstVendor) {
+          const matchedUser = availableUsers.find(u => u.id === firstVendor.userId);
+          if (matchedUser?.email) {
+            targetEmail = matchedUser.email;
+          }
+        } else {
+          targetEmail = 'ze.organicos@feirae.com';
+        }
+      }
+    }
+
+    const result = await loginWithEmail(targetEmail);
+    if (!result.success) {
+      console.warn('Switch user warning:', result.error);
     }
   };
 
@@ -85,30 +149,9 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         return { success: false, error: data.error || 'Credenciais inválidas.' };
       }
     } catch (err) {
-      console.warn('API auth error, using local fallback:', err);
+      console.error('API auth error:', err);
+      return { success: false, error: 'Erro de conexão ao autenticar.' };
     }
-
-    // Fallback to local accounts
-    const foundUser = INITIAL_USERS.find(u => u.email.toLowerCase() === cleanEmail);
-    if (!foundUser) {
-      return { success: false, error: 'E-mail não encontrado entre as contas cadastradas.' };
-    }
-
-    let vendorObj: Vendor | null = null;
-    if (foundUser.role === 'VENDOR') {
-      vendorObj = INITIAL_VENDORS.find(v => v.userId === foundUser.id) || INITIAL_VENDORS[0];
-      setCurrentUser(foundUser);
-      setCurrentVendor(vendorObj);
-    } else if (foundUser.role === 'ADMIN') {
-      setCurrentUser(foundUser);
-      setCurrentVendor(null);
-    } else {
-      setCurrentUser(foundUser);
-      setCurrentVendor(null);
-    }
-
-    localStorage.setItem('feirae_user_session', JSON.stringify({ user: foundUser, vendor: vendorObj }));
-    return { success: true, user: foundUser };
   };
 
   const registerUser = async (payload: any) => {
@@ -124,6 +167,7 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
         setCurrentUser(data.user);
         setCurrentVendor(data.vendor || null);
         localStorage.setItem('feirae_user_session', JSON.stringify({ user: data.user, vendor: data.vendor }));
+        loadDatabaseAccounts();
         return { success: true, user: data.user };
       } else {
         return { success: false, error: data.error || 'Erro ao registrar usuário.' };
@@ -157,8 +201,8 @@ export function UserProvider({ children }: { children: React.ReactNode }) {
       registerUser,
       updateCurrentVendor,
       logout,
-      availableUsers: INITIAL_USERS,
-      availableVendors: INITIAL_VENDORS,
+      availableUsers,
+      availableVendors,
       isLoaded,
     }}>
       {children}

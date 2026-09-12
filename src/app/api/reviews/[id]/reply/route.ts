@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function PATCH(
   request: Request,
@@ -17,52 +18,42 @@ export async function PATCH(
       );
     }
 
-    // 1. Try Prisma Database
-    try {
-      const review = await prisma.review.findUnique({
-        where: { id: params.id },
-        include: { vendor: true },
-      });
+    const review = await prisma.review.findUnique({
+      where: { id: params.id },
+      include: { vendor: true },
+    });
 
-      if (review) {
-        const updatedReview = await (prisma.review as any).update({
-          where: { id: params.id },
-          data: {
-            vendorReply: replyText,
-            vendorReplyAt: new Date(),
-          },
-        });
-
-        // Create notification for client
-        await prisma.notification.create({
-          data: {
-            userId: review.clientId,
-            title: 'Sua avaliação foi respondida!',
-            message: `${review.vendor.businessName} respondeu ao seu comentário: "${replyText.slice(0, 80)}${replyText.length > 80 ? '...' : ''}"`,
-            type: 'REVIEW_REPLY',
-            orderId: review.orderId,
-          },
-        }).catch(() => {});
-
-        // Keep in-memory store in sync
-        store.replyToReview(params.id, replyText);
-
-        return NextResponse.json(updatedReview);
-      }
-    } catch (dbErr) {
-      console.warn('Prisma reply review fallback:', dbErr);
+    if (!review) {
+      return NextResponse.json({ error: 'Avaliação não encontrada no banco de dados.' }, { status: 404 });
     }
 
-    // 2. Fallback to MemoryStore
-    const result = store.replyToReview(params.id, replyText);
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
-    }
+    const updatedReview = await (prisma.review as any).update({
+      where: { id: params.id },
+      data: {
+        vendorReply: replyText,
+        vendorReplyAt: new Date(),
+      },
+    });
 
-    return NextResponse.json(result);
-  } catch (err) {
+    // Create notification for client
+    await prisma.notification.create({
+      data: {
+        userId: review.clientId,
+        title: 'Sua avaliação foi respondida!',
+        message: `${review.vendor.businessName} respondeu ao seu comentário: "${replyText.slice(0, 80)}${replyText.length > 80 ? '...' : ''}"`,
+        type: 'REVIEW_REPLY',
+        orderId: review.orderId,
+      },
+    }).catch(() => {});
+
+    return NextResponse.json({
+      ...updatedReview,
+      createdAt: updatedReview.createdAt.toISOString ? updatedReview.createdAt.toISOString() : String(updatedReview.createdAt),
+      vendorReplyAt: updatedReview.vendorReplyAt?.toISOString ? updatedReview.vendorReplyAt.toISOString() : updatedReview.vendorReplyAt,
+    });
+  } catch (err: any) {
     console.error('Error in PATCH /api/reviews/[id]/reply:', err);
-    return NextResponse.json({ error: 'Erro ao enviar resposta à avaliação.' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao enviar resposta à avaliação no banco de dados.' }, { status: 500 });
   }
 }
 
@@ -71,34 +62,28 @@ export async function DELETE(
   { params }: { params: { id: string } }
 ) {
   try {
-    try {
-      const existing = await prisma.review.findUnique({
-        where: { id: params.id },
-      });
+    const existing = await prisma.review.findUnique({
+      where: { id: params.id },
+    });
 
-      if (existing) {
-        const updated = await (prisma.review as any).update({
-          where: { id: params.id },
-          data: {
-            vendorReply: null,
-            vendorReplyAt: null,
-          },
-        });
-        store.deleteReviewReply(params.id);
-        return NextResponse.json(updated);
-      }
-    } catch (dbErr) {
-      console.warn('Prisma delete review reply fallback:', dbErr);
+    if (!existing) {
+      return NextResponse.json({ error: 'Avaliação não encontrada no banco de dados.' }, { status: 404 });
     }
 
-    const result = store.deleteReviewReply(params.id);
-    if ('error' in result) {
-      return NextResponse.json({ error: result.error }, { status: 404 });
-    }
+    const updated = await (prisma.review as any).update({
+      where: { id: params.id },
+      data: {
+        vendorReply: null,
+        vendorReplyAt: null,
+      },
+    });
 
-    return NextResponse.json(result);
-  } catch (err) {
+    return NextResponse.json({
+      ...updated,
+      createdAt: updated.createdAt.toISOString ? updated.createdAt.toISOString() : String(updated.createdAt),
+    });
+  } catch (err: any) {
     console.error('Error in DELETE /api/reviews/[id]/reply:', err);
-    return NextResponse.json({ error: 'Erro ao excluir resposta.' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao excluir resposta no banco de dados.' }, { status: 500 });
   }
 }

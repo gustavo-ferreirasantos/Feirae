@@ -41,7 +41,9 @@ function ClientOrdersContent() {
   const fetchOrders = async () => {
     try {
       const activeClientId = currentUser?.id || 'user-client-1';
-      const res = await fetch('/api/orders?clientId=' + encodeURIComponent(activeClientId));
+      const activeEmail = currentUser?.email || 'maria.oliveira@email.com';
+      const url = `/api/orders?clientId=${encodeURIComponent(activeClientId)}&clientEmail=${encodeURIComponent(activeEmail)}`;
+      const res = await fetch(url);
       if (res.ok) {
         const data = await res.json();
         setOrders(data);

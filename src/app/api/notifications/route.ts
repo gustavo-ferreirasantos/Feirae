@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { store } from '@/lib/store';
+
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -15,15 +16,17 @@ export async function GET(request: Request) {
       orderBy: { createdAt: 'desc' },
       take: 20,
     });
-    if (dbNotifs && dbNotifs.length > 0) {
-      return NextResponse.json(dbNotifs);
-    }
-  } catch (err) {
-    console.warn('Prisma get notifs fallback:', err);
-  }
 
-  const notifs = store.getNotifications(userId);
-  return NextResponse.json(notifs);
+    const formatted = (dbNotifs || []).map(n => ({
+      ...n,
+      createdAt: n.createdAt.toISOString ? n.createdAt.toISOString() : String(n.createdAt),
+    }));
+
+    return NextResponse.json(formatted);
+  } catch (err: any) {
+    console.error('Prisma get notifs error:', err);
+    return NextResponse.json({ error: 'Erro ao buscar notificações.' }, { status: 500 });
+  }
 }
 
 export async function PATCH(request: Request) {
@@ -31,21 +34,14 @@ export async function PATCH(request: Request) {
     const body = await request.json();
     const { userId } = body;
     if (userId) {
-      try {
-        await prisma.notification.updateMany({
-          where: { userId, read: false },
-          data: { read: true },
-        });
-      } catch (err) {
-        console.warn('Prisma mark notifs read fallback:', err);
-      }
-
-      store.getNotifications(userId).forEach(n => {
-        n.read = true;
+      await prisma.notification.updateMany({
+        where: { userId, read: false },
+        data: { read: true },
       });
     }
     return NextResponse.json({ success: true });
-  } catch {
+  } catch (err: any) {
+    console.error('Error updating notifications in DB:', err);
     return NextResponse.json({ error: 'Erro ao marcar notificações.' }, { status: 500 });
   }
 }
