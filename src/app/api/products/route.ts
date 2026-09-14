@@ -82,6 +82,30 @@ export async function POST(request: Request) {
   try {
     const body = await request.json();
     
+    if (!body.name || typeof body.name !== 'string' || !body.name.trim()) {
+      return NextResponse.json({ error: 'Nome do produto é obrigatório.' }, { status: 400 });
+    }
+
+    if (!body.vendorId) {
+      return NextResponse.json({ error: 'Identificação do feirante (vendorId) é obrigatória.' }, { status: 400 });
+    }
+
+    const priceNum = Number(body.price);
+    if (body.price === undefined || body.price === null || isNaN(priceNum) || priceNum <= 0) {
+      return NextResponse.json(
+        { error: 'Preço inválido: O preço deve ser um valor numérico maior que zero (R$ 0,01 ou superior).' },
+        { status: 400 }
+      );
+    }
+
+    const stockNum = Number(body.stock);
+    if (body.stock === undefined || body.stock === null || isNaN(stockNum) || stockNum < 0 || !Number.isInteger(stockNum)) {
+      return NextResponse.json(
+        { error: 'Quantidade inválida: A quantidade em estoque deve ser um número inteiro maior ou igual a zero.' },
+        { status: 400 }
+      );
+    }
+
     const vendor = await prisma.vendor.findFirst({
       where: {
         OR: [{ id: body.vendorId }, { slug: body.vendorId }, { userId: body.vendorId }],
@@ -107,12 +131,12 @@ export async function POST(request: Request) {
     const created = await prisma.product.create({
       data: {
         vendorId: vendor.id,
-        name: body.name,
-        description: body.description,
-        category: body.category,
+        name: body.name.trim(),
+        description: body.description || '',
+        category: body.category || 'Hortaliças',
         unit: body.unit || 'kg',
-        price: Number(body.price),
-        stock: Number(body.stock),
+        price: priceNum,
+        stock: stockNum,
         imageUrl: body.imageUrl || null,
         isOrganic: Boolean(body.isOrganic),
         isWeighable: Boolean(body.isWeighable),

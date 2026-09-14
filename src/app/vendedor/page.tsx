@@ -540,38 +540,57 @@ export default function VendorDashboardPage() {
 
   const handleSaveProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    const priceNum = parseFloat(formPrice);
+    if (isNaN(priceNum) || priceNum <= 0) {
+      alert('Preço inválido: O preço deve ser maior que zero (R$ 0,01 ou superior).');
+      return;
+    }
+
+    const stockNum = Number(formStock);
+    if (isNaN(stockNum) || stockNum < 0 || !Number.isInteger(stockNum)) {
+      alert('Quantidade inválida: A quantidade em estoque deve ser um número inteiro maior ou igual a zero.');
+      return;
+    }
+
     setSavingProduct(true);
     try {
       const payload = {
         vendorId: activeVendorId,
-        name: formName,
+        name: formName.trim(),
         description: formDesc,
         category: formCategory,
         unit: formUnit,
-        price: parseFloat(formPrice),
-        stock: parseInt(formStock, 10),
+        price: priceNum,
+        stock: stockNum,
         imageUrl: formImage,
         isOrganic: formOrganic,
         isWeighable: formWeighable,
       };
 
-      if (editingProduct) {
-        await fetch('/api/products/' + editingProduct.id, {
-          method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } else {
-        await fetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+      const res = editingProduct
+        ? await fetch('/api/products/' + editingProduct.id, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          })
+        : await fetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Erro ao salvar produto.');
+        return;
       }
+
       setShowProductModal(false);
       loadVendorData();
     } catch (err) {
       console.error(err);
+      alert('Erro de conexão ao salvar produto.');
     } finally {
       setSavingProduct(false);
     }
@@ -580,14 +599,18 @@ export default function VendorDashboardPage() {
   const handleDeleteProduct = async (productId: string) => {
     if (!confirm('Deseja realmente desativar este produto do seu catálogo?')) return;
     try {
-      const res = await fetch('/api/products/' + productId, {
+      const res = await fetch(`/api/products/${productId}?vendorId=${activeVendorId}`, {
         method: 'DELETE',
       });
       if (res.ok) {
         loadVendorData();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao desativar produto.');
       }
     } catch (err) {
       console.error(err);
+      alert('Erro de conexão ao desativar produto.');
     }
   };
 
@@ -928,8 +951,10 @@ export default function VendorDashboardPage() {
                   <label className="font-semibold text-stone-700 block mb-1">Preço Demonstrativo (R$)</label>
                   <input
                     type="number"
-                    step="0.10"
+                    step="0.01"
+                    min="0.01"
                     required
+                    placeholder="0.00"
                     value={formPrice}
                     onChange={e => setFormPrice(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none"
@@ -940,7 +965,10 @@ export default function VendorDashboardPage() {
                   <label className="font-semibold text-stone-700 block mb-1">Estoque Disponível</label>
                   <input
                     type="number"
+                    step="1"
+                    min="0"
                     required
+                    placeholder="0"
                     value={formStock}
                     onChange={e => setFormStock(e.target.value)}
                     className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none"
