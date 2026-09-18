@@ -138,17 +138,26 @@ export async function POST(request: Request) {
     const itemsToCreate = [];
 
     for (const it of body.items) {
-      const product = await prisma.product.findFirst({
-        where: {
-          OR: [
-            { id: it.productId },
-            { vendorId: vendor.id, name: { equals: it.productName, mode: 'insensitive' } },
-          ],
-        },
-      });
+      const product = it.productId
+        ? await prisma.product.findFirst({
+            where: {
+              id: it.productId,
+              vendorId: vendor.id,
+            },
+          })
+        : it.productName
+        ? await prisma.product.findFirst({
+            where: {
+              vendorId: vendor.id,
+              name: { equals: it.productName, mode: 'insensitive' },
+            },
+          })
+        : null;
 
       if (!product) {
-        throw new Error(`Produto não encontrado no banco de dados.`);
+        return NextResponse.json({
+          error: `Produto não encontrado no catálogo desta barraca.`,
+        }, { status: 404 });
       }
 
       if (product.stock < it.quantity) {

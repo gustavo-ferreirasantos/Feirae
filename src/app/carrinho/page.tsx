@@ -132,6 +132,7 @@ export default function CartCheckoutPage() {
           vendorName: vendorName || undefined,
           items: items.map(i => ({
             productId: i.product.id,
+            productName: i.product.name,
             quantity: i.quantity,
           })),
           paymentMethod,
