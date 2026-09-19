@@ -1,6 +1,8 @@
 # Feiraê - Plataforma Digital para Feiras Livres
 
-Plataforma web full stack para digitalização de feiras livres urbanas e agroecológicas em Petrolina - PE. Conecta feirantes e consumidores locais por meio de pré-encomendas (*Click & Collect*), mapas interativos, pagamentos digitais (Pix/Cartão) e painéis de gestão.
+https://feirae.vercel.app/
+
+Plataforma web full stack para digitalização de feiras livres urbanas e agroecológicas em Petrolina - PE. Conecta feirantes e consumidores locais por meio de pré-encomendas (*Click & Collect*), pagamentos digitais (Pix/Cartão) e painéis de gestão.
 
 ---
 
