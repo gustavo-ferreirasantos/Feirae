@@ -46,6 +46,8 @@ import {
   Leaf,
   FileText,
   ArrowRightLeft,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
@@ -86,6 +88,7 @@ export default function AdminDashboardPage() {
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -304,6 +307,234 @@ export default function AdminDashboardPage() {
     } catch (err) {
       console.error(err);
     }
+  };
+
+  // ================= RELATÓRIOS & DOWNLOAD (CSV) =================
+  const handleExportOrdersCSV = () => {
+    const ordersList = stats?.recentOrders || [];
+    if (!ordersList.length) {
+      alert('Não há pedidos disponíveis para exportação no momento.');
+      return;
+    }
+
+    const headers = [
+      'Codigo do Pedido',
+      'Data e Hora',
+      'Cliente',
+      'Email Cliente',
+      'Telefone Cliente',
+      'Barraca / Feirante',
+      'Modelo do Feirante',
+      'Itens',
+      'Forma de Pagamento',
+      'Status do Pedido',
+      'Valor do Pedido (R$)',
+      'Taxa Plataforma (%)',
+      'Comissao Feirae (R$)',
+      'Repasse Liquido Feirante (R$)'
+    ];
+
+    const rows = ordersList.map((o: any) => {
+      const dateFormatted = new Date(o.createdAt).toLocaleString('pt-BR');
+      const planLabel = o.isSubscriber ? 'Assinante Pro (Isento)' : 'Vendedor Padrão';
+      const rateLabel = o.isSubscriber ? '0%' : `${((o.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const methodLabel = o.paymentMethod === 'RETIRADA'
+        ? 'No Ato (Dinheiro/Pix Barraca)'
+        : o.paymentMethod === 'MERCADO_PAGO_PIX'
+          ? 'App (Mercado Pago Pix)'
+          : o.paymentMethod || 'Outro';
+
+      return [
+        `"${o.orderNumber}"`,
+        `"${dateFormatted}"`,
+        `"${(o.clientName || 'Cliente').replace(/"/g, '""')}"`,
+        `"${o.clientEmail || '-'}"`,
+        `"${o.clientPhone || '-'}"`,
+        `"${(o.vendorName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${planLabel}"`,
+        o.itemsCount || 1,
+        `"${methodLabel}"`,
+        `"${o.status}"`,
+        (o.totalAmount || 0).toFixed(2).replace('.', ','),
+        `"${rateLabel}"`,
+        (o.commissionAmount || 0).toFixed(2).replace('.', ','),
+        (o.netAmount || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrdersAmount = ordersList.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+    const totalCommissions = ordersList.reduce((sum: number, o: any) => sum + (o.commissionAmount || 0), 0);
+    const totalNet = ordersList.reduce((sum: number, o: any) => sum + (o.netAmount || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"Emitido em ${new Date().toLocaleString('pt-BR')}"`,
+      `"${ordersList.length} pedidos"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrdersAmount.toFixed(2).replace('.', ','),
+      '""',
+      totalCommissions.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-pedidos-comissoes-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportVendorsCSV = () => {
+    if (!vendors.length) {
+      alert('Não há feirantes cadastrados para exportação.');
+      return;
+    }
+
+    const commList = stats?.commissionsByVendor || [];
+    const commMap = new Map<string, any>();
+    commList.forEach((c: any) => commMap.set(c.vendorId, c));
+
+    const headers = [
+      'Barraca / Feirante',
+      'Responsavel',
+      'Email',
+      'Telefone',
+      'Categoria',
+      'Localizacao na Feira',
+      'Ponto / Numero',
+      'Modelo de Cobranca',
+      'Taxa de Comissao (%)',
+      'Status na Vitrine',
+      'Destaque Patrocinado',
+      'Total de Pedidos',
+      'Volume Bruto GMV (R$)',
+      'Comissao Gerada (R$)',
+      'Repasse Liquido (R$)'
+    ];
+
+    const rows = vendors.map(v => {
+      const cv = commMap.get(v.id) || {
+        ordersCount: 0,
+        totalGMV: 0,
+        totalCommission: 0,
+        totalNet: 0,
+        commissionRate: v.isSubscriber ? 0 : (v.commissionRate ?? 0.10)
+      };
+
+      const isSub = v.isSubscriber || v.plan === 'PRO';
+      const rateLabel = isSub ? '0%' : `${((cv.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const activeLabel = v.active ? 'Aprovada & Ativa' : 'Aguardando Aprovação';
+      const featuredLabel = v.isFeatured ? 'Sim (Patrocinada)' : 'Não';
+
+      return [
+        `"${(v.businessName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${(v.user?.name || '-').replace(/"/g, '""')}"`,
+        `"${v.user?.email || '-'}"`,
+        `"${v.user?.phone || v.whatsappPhone || '-'}"`,
+        `"${(v.category || '-').replace(/"/g, '""')}"`,
+        `"${(v.fairLocation || '-').replace(/"/g, '""')}"`,
+        `"${v.boothNumber || '-'}"`,
+        `"${isSub ? 'Assinante Pro (Isento)' : 'Vendedor Padrão'}"`,
+        `"${rateLabel}"`,
+        `"${activeLabel}"`,
+        `"${featuredLabel}"`,
+        cv.ordersCount || 0,
+        (cv.totalGMV || 0).toFixed(2).replace('.', ','),
+        (cv.totalCommission || 0).toFixed(2).replace('.', ','),
+        (cv.totalNet || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrders = commList.reduce((sum: number, v: any) => sum + (v.ordersCount || 0), 0);
+    const totalGMV = commList.reduce((sum: number, v: any) => sum + (v.totalGMV || 0), 0);
+    const totalCommission = commList.reduce((sum: number, v: any) => sum + (v.totalCommission || 0), 0);
+    const totalNet = commList.reduce((sum: number, v: any) => sum + (v.totalNet || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"${vendors.length} feirantes cadastrados"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrders,
+      totalGMV.toFixed(2).replace('.', ','),
+      totalCommission.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-feirantes-consolidado-feirae-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportExecutiveSummaryCSV = () => {
+    if (!stats) {
+      alert('Dados estatísticos ainda não carregados.');
+      return;
+    }
+
+    const dateFormatted = new Date().toLocaleString('pt-BR');
+    const periodLabel = period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Geral (Acumulado)';
+
+    const rows = [
+      ['"RELATORIO EXECUTIVO & FINANCEIRO - FEIRAE"'],
+      [`"Data de Emissao";"${dateFormatted}"`],
+      [`"Periodo de Referencia";"${periodLabel}"`],
+      [''],
+      ['"INDICADOR";"VALOR"'],
+      [`"Feirantes Ativos na Vitrine";"${stats.activeVendors || 0}"`],
+      [`"Feirantes Assinantes Pro";"${stats.subscribersCount || 0}"`],
+      [`"Barracas em Destaque Patrocinado";"${stats.featuredVendorsCount || 0}"`],
+      [`"Total de Pedidos Realizados";"${stats.totalOrders || 0}"`],
+      [`"Volume Bruto Transacionado (GMV)";"R$ ${(stats.totalGMV || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Comissoes Simuladas de Pedidos";"R$ ${(stats.simulatedCommissionTotal || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita Recorrente de Assinaturas (MRR)";"R$ ${(stats.subscriptionRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita de Destaques Patrocinados";"R$ ${(stats.sponsorshipRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Faturamento Real Acumulado da Plataforma";"R$ ${(stats.totalMonetizationEstimate || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Take Rate Efetivo da Plataforma";"${stats.totalGMV > 0 ? (((stats.totalMonetizationEstimate || 0) / stats.totalGMV) * 100).toFixed(1).replace('.', ',') + '%' : '0%'}"`],
+      [`"Ticket Medio por Pedido";"${stats.totalOrders > 0 ? ((stats.totalGMV || 0) / stats.totalOrders).toFixed(2).replace('.', ',') : '0,00'}"`],
+    ];
+
+    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-executivo-financeiro-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
   };
 
   if (!isAdmin) {
@@ -983,9 +1214,19 @@ export default function AdminDashboardPage() {
                 Exibe o total acumulado de vendas brutas, comissões simuladas e repasse líquido para cada barraca.
               </p>
             </div>
-            <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-xs font-bold w-fit">
-              {commissionsByVendor.length} barraca(s) cadastradas
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar planilha consolidada de feirantes em CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
+              <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-xs font-bold w-fit">
+                {commissionsByVendor.length} barraca(s) cadastradas
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -1128,6 +1369,16 @@ export default function AdminDashboardPage() {
                   className="pl-8 pr-3.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none w-64"
                 />
               </div>
+
+              {/* Export Orders Button */}
+              <button
+                onClick={handleExportOrdersCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                title="Exportar todos os pedidos e comissões em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar Pedidos (CSV)</span>
+              </button>
             </div>
           </div>
 
@@ -1772,6 +2023,63 @@ export default function AdminDashboardPage() {
             </button>
           </div>
 
+          {/* Export Reports Dropdown Menu */}
+          <div className="relative">
+            {isExportMenuOpen && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsExportMenuOpen(false)}
+              />
+            )}
+            <button
+              onClick={() => setIsExportMenuOpen(prev => !prev)}
+              className="px-3.5 py-2 rounded-2xl bg-white border border-stone-200 text-stone-800 flex items-center gap-2 text-xs font-bold shadow-xs hover:bg-stone-50 transition cursor-pointer relative z-50"
+              title="Baixar relatórios em planilha CSV compatível com Excel e Google Sheets"
+            >
+              <Download className="w-3.5 h-3.5 text-purple-600" />
+              <span>Exportar Relatórios</span>
+              <ArrowDown className={`w-3 h-3 text-stone-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 space-y-1 text-xs">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Planilhas CSV (Excel / Sheets)
+                </div>
+                <button
+                  onClick={handleExportOrdersCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Pedidos & Comissões (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Auditoria detalhada com valores e taxas</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportVendorsCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <Store className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Consolidado de Feirantes (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Cadastro, GMV e repasses por barraca</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportExecutiveSummaryCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Fechamento Executivo (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Indicadores gerais, receita e Take Rate</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           {pendingVendorsCount > 0 && (
             <button
               onClick={() => setActiveTab('VENDORS')}
@@ -2135,6 +2443,16 @@ export default function AdminDashboardPage() {
                   Ativas ({vendors.filter(v => v.active === true).length})
                 </button>
               </div>
+
+              {/* Export Vendors Button */}
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar cadastro consolidado de feirantes em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
             </div>
           </div>
 
