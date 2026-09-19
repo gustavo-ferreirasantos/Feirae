@@ -21,7 +21,6 @@ Plataforma web full stack para digitalização de feiras livres urbanas e agroec
 - **Para Clientes:**
   - Vitrine com catálogo de produtos, filtros por categoria e busca em tempo real.
   - Filtro exclusivo de **Produtores Orgânicos Certificados**.
-  - **Mapa Interativo** com a localização física das barracas por setor/alameda.
   - Carrinho com suporte a unidades e itens pesáveis (kg/g) com cálculo estimado.
   - Escolha de **Janela de Retirada** (dia e horário).
   - Checkout via **Mercado Pago (Pix / Cartão)** ou Pagamento na Retirada.
