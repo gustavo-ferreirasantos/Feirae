@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Plus, Minus, Check, Leaf, AlertCircle, Store, ShieldAlert, Scale } from 'lucide-react';
 import { Product } from '@/types';
-import { formatCurrency, formatWeight } from '@/lib/utils';
+import { formatCurrency, formatWeight, DEFAULT_PRODUCT_IMAGE } from '@/lib/utils';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
 
@@ -18,10 +18,10 @@ export function ProductCard({
 }) {
   const { addItem, setItemQuantity, items } = useCart();
   const { currentUser } = useUser();
-  const [feedback, setFeedback] = useState<string | null>(null);
-
   const isAdmin = currentUser?.role === 'ADMIN';
   const isVendor = currentUser?.role === 'VENDOR';
+  const [feedback, setFeedback] = useState<string | null>(null);
+
   const cartItem = items.find(i => i.product.id === product.id);
   const inCartQty = cartItem?.quantity || 0;
   const isOutOfStock = product.stock <= 0;
@@ -96,17 +96,14 @@ export function ProductCard({
       
       {/* Product Image */}
       <div className="relative aspect-4/3 w-full bg-stone-100 overflow-hidden">
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-stone-400 bg-stone-100">
-            <Store className="w-10 h-10 stroke-1" />
-          </div>
-        )}
+        <img
+          src={product.imageUrl?.trim() ? product.imageUrl.trim() : DEFAULT_PRODUCT_IMAGE}
+          alt={product.name}
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+          }}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
 
         {/* Category, Organic & Weighable Badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">
@@ -236,7 +233,7 @@ export function ProductCard({
                   disabled={isOutOfStock || currentWeight >= product.stock || isAdmin || isVendor}
                   onClick={() => handleWeightChange(Math.min(product.stock, Number((currentWeight + 0.1).toFixed(3))))}
                   className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition disabled:opacity-30 cursor-pointer"
-                  title="Aumentar 100g"
+                  title={currentWeight >= product.stock ? 'Limite em estoque atingido' : 'Aumentar 100g'}
                 >
                   <Plus className="w-3 h-3" />
                 </button>
@@ -283,59 +280,77 @@ export function ProductCard({
             <span className="text-[10px] text-amber-700 block text-center font-medium">
               *Pesagem final aferida na balança na retirada
             </span>
+
+            {currentWeight >= product.stock && !isOutOfStock && (
+              <div className="flex items-center justify-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 animate-in fade-in">
+                <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>Limite em estoque atingido ({formatWeight(product.stock)} disponíveis)</span>
+              </div>
+            )}
           </div>
         ) : (
-          <div className="mt-4 pt-3 border-t border-stone-100 flex items-center justify-between">
-            <div>
-              <span className="text-xs text-stone-400 block font-normal">
-                Preço demonstrativo
-              </span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-base font-extrabold text-stone-900">
-                  {formatCurrency(product.price)}
+          <div className="mt-4 pt-3 border-t border-stone-100 flex flex-col gap-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs text-stone-400 block font-normal">
+                  Preço demonstrativo
                 </span>
-                <span className="text-xs text-stone-500 font-medium">
-                  /{product.unit}
-                </span>
+                <div className="flex items-baseline gap-1">
+                  <span className="text-base font-extrabold text-stone-900">
+                    {formatCurrency(product.price)}
+                  </span>
+                  <span className="text-xs text-stone-500 font-medium">
+                    /{product.unit}
+                  </span>
+                </div>
               </div>
+
+              <button
+                onClick={handleAdd}
+                disabled={isOutOfStock || isAdmin || isVendor}
+                className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                  isAdmin || isVendor
+                    ? 'bg-stone-100 text-stone-400 cursor-not-allowed border border-stone-200'
+                    : isOutOfStock
+                    ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
+                    : inCartQty > 0
+                    ? 'bg-feira-600 text-white hover:bg-feira-700 shadow-xs'
+                    : 'bg-stone-900 text-white hover:bg-feira-600 shadow-xs'
+                }`}
+                title={
+                  isAdmin
+                    ? 'Administradores não realizam compras de pré-pedidos'
+                    : isVendor
+                    ? 'Feirantes não realizam compras de pré-pedidos'
+                    : inCartQty >= product.stock
+                    ? 'Limite em estoque atingido'
+                    : undefined
+                }
+              >
+                {isAdmin ? (
+                  <span>Modo Admin</span>
+                ) : isVendor ? (
+                  <span>Modo Feirante</span>
+                ) : inCartQty > 0 ? (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>{inCartQty} no carrinho</span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Reservar</span>
+                  </>
+                )}
+              </button>
             </div>
 
-            <button
-              onClick={handleAdd}
-              disabled={isOutOfStock || isAdmin || isVendor}
-              className={`px-3 py-2 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
-                isAdmin || isVendor
-                  ? 'bg-stone-100 text-stone-400 cursor-not-allowed border border-stone-200'
-                  : isOutOfStock
-                  ? 'bg-stone-100 text-stone-400 cursor-not-allowed'
-                  : inCartQty > 0
-                  ? 'bg-feira-600 text-white hover:bg-feira-700 shadow-xs'
-                  : 'bg-stone-900 text-white hover:bg-feira-600 shadow-xs'
-              }`}
-              title={
-                isAdmin
-                  ? 'Administradores não realizam compras de pré-pedidos'
-                  : isVendor
-                  ? 'Feirantes não realizam compras de pré-pedidos'
-                  : undefined
-              }
-            >
-              {isAdmin ? (
-                <span>Modo Admin</span>
-              ) : isVendor ? (
-                <span>Modo Feirante</span>
-              ) : inCartQty > 0 ? (
-                <>
-                  <Check className="w-3.5 h-3.5" />
-                  <span>{inCartQty} no carrinho</span>
-                </>
-              ) : (
-                <>
-                  <Plus className="w-3.5 h-3.5" />
-                  <span>Reservar</span>
-                </>
-              )}
-            </button>
+            {inCartQty >= product.stock && !isOutOfStock && (
+              <div className="flex items-center justify-center gap-1 text-[10px] font-semibold text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 animate-in fade-in">
+                <AlertCircle className="w-3 h-3 text-amber-600 shrink-0" />
+                <span>Limite em estoque atingido ({product.stock} {product.unit}s disponíveis)</span>
+              </div>
+            )}
           </div>
         )}
 

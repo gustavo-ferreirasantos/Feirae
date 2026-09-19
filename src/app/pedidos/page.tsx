@@ -14,25 +14,33 @@ import {
   RotateCcw,
   Star,
   QrCode,
-  CreditCard
+  CreditCard,
+  AlertCircle,
+  MessageCircle
 } from 'lucide-react';
-import { Order } from '@/types';
+import { Order, Product } from '@/types';
 import { useUser } from '@/lib/user-context';
 import { useCart } from '@/lib/cart-context';
 import { formatCurrency, formatDate, formatWeight } from '@/lib/utils';
+import { getOrderWhatsAppContactLink } from '@/lib/whatsapp';
 import { StarRating } from '@/components/StarRating';
 import { ReviewModal } from '@/components/ReviewModal';
 import { LoginModal } from '@/components/LoginModal';
 import { PickupPassModal } from '@/components/PickupPassModal';
 import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
+type StatusFilter = 'TODOS' | 'ATIVOS' | 'RETIRADOS' | 'CANCELADOS';
+
 function ClientOrdersContent() {
   const { currentUser, isLoaded } = useUser();
-  const { addItem } = useCart();
+  const { addItem, items: cartItems, vendorId: cartVendorId, clearCart } = useCart();
   const searchParams = useSearchParams();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [stockWarning, setStockWarning] = useState<string | null>(null);
+  const [isRepeatingOrder, setIsRepeatingOrder] = useState<string | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('TODOS');
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [reviewOrder, setReviewOrder] = useState<Order | null>(null);
   const [selectedPassOrder, setSelectedPassOrder] = useState<Order | null>(null);
@@ -115,30 +123,158 @@ function ClientOrdersContent() {
     }
   };
 
-  const handleRepeatOrder = (order: Order) => {
+  const filterOptions: { label: string; value: StatusFilter }[] = [
+    { label: 'Todos', value: 'TODOS' },
+    { label: 'Ativos', value: 'ATIVOS' },
+    { label: 'Retirados', value: 'RETIRADOS' },
+    { label: 'Cancelados', value: 'CANCELADOS' },
+  ];
+
+  const filterCounts = {
+    TODOS: orders.length,
+    ATIVOS: orders.filter(o => ['NOVO', 'EM_PREPARO', 'PRONTO'].includes((o.status || '').toUpperCase())).length,
+    RETIRADOS: orders.filter(o => (o.status || '').toUpperCase() === 'RETIRADO').length,
+    CANCELADOS: orders.filter(o => (o.status || '').toUpperCase() === 'CANCELADO').length,
+  };
+
+  const filteredOrders = orders.filter(order => {
+    const status = (order.status || '').toUpperCase();
+    if (statusFilter === 'ATIVOS') {
+      return status === 'NOVO' || status === 'EM_PREPARO' || status === 'PRONTO';
+    }
+    if (statusFilter === 'RETIRADOS') {
+      return status === 'RETIRADO';
+    }
+    if (statusFilter === 'CANCELADOS') {
+      return status === 'CANCELADO';
+    }
+    return true;
+  });
+
+  const handleRepeatOrder = async (order: Order) => {
     if (!order.items || order.items.length === 0) return;
 
-    order.items.forEach(item => {
-      addItem(
-        {
-          id: item.productId,
-          vendorId: order.vendorId,
-          vendorName: order.vendorName || 'Feirante',
-          name: item.productName,
-          description: '',
-          category: 'Hortifrúti',
-          unit: item.productUnit || 'kg',
-          price: item.unitPrice,
-          stock: 99,
-          isActive: true,
-          isOrganic: false,
-        },
-        item.quantity
+    if (cartVendorId && cartVendorId !== order.vendorId && cartItems.length > 0) {
+      const confirmClear = confirm(
+        'Seu carrinho já contém produtos de outro feirante. Deseja limpar o carrinho atual para adicionar os itens deste pedido?'
       );
-    });
+      if (!confirmClear) return;
+      clearCart();
+    }
 
-    setActionFeedback(`Itens do pedido #${order.orderNumber} adicionados ao seu carrinho!`);
-    setTimeout(() => setActionFeedback(null), 4000);
+    setIsRepeatingOrder(order.id);
+    setStockWarning(null);
+
+    try {
+      // Busca os produtos atualizados da barraca para verificar o estoque atual em tempo real
+      let liveProducts: Product[] = [];
+      try {
+        const res = await fetch(`/api/products?vendorId=${encodeURIComponent(order.vendorId)}`);
+        if (res.ok) {
+          liveProducts = await res.json();
+        }
+      } catch (err) {
+        console.error('Erro ao buscar produtos da barraca:', err);
+      }
+
+      // Fallback para buscar catálogo completo caso algum item não venha filtrado por vendorId
+      const hasMissing = order.items.some(item => !liveProducts.some(p => p.id === item.productId));
+      if (hasMissing) {
+        try {
+          const resAll = await fetch('/api/products');
+          if (resAll.ok) {
+            const allProducts: Product[] = await resAll.json();
+            allProducts.forEach(p => {
+              if (!liveProducts.some(lp => lp.id === p.id)) {
+                liveProducts.push(p);
+              }
+            });
+          }
+        } catch (err) {
+          console.error('Erro no fallback de produtos:', err);
+        }
+      }
+
+      const outOfStockItems: string[] = [];
+      const addedItems: string[] = [];
+
+      for (const item of order.items) {
+        const liveProduct = liveProducts.find(p => p.id === item.productId);
+        const currentStock = (liveProduct && liveProduct.isActive) ? (liveProduct.stock ?? 0) : 0;
+
+        // Produto sem estoque ou desativado
+        if (currentStock <= 0) {
+          outOfStockItems.push(item.productName);
+          continue;
+        }
+
+        // Calcula estoque remanescente considerando o que já está no carrinho
+        const currentInCart = cartItems.find(i => i.product.id === item.productId)?.quantity || 0;
+        const availableStock = currentStock - currentInCart;
+
+        if (availableStock <= 0) {
+          outOfStockItems.push(item.productName);
+          continue;
+        }
+
+        const qtyToAdd = Math.min(item.quantity, availableStock);
+        const productToAdd: Product = {
+          id: liveProduct!.id,
+          vendorId: order.vendorId,
+          vendorName: order.vendorName || liveProduct!.vendorName || 'Feirante',
+          name: liveProduct!.name || item.productName,
+          description: liveProduct!.description || '',
+          category: liveProduct!.category || 'Hortifrúti',
+          unit: liveProduct!.unit || item.productUnit || 'kg',
+          price: liveProduct!.price ?? item.unitPrice,
+          stock: currentStock,
+          imageUrl: liveProduct!.imageUrl,
+          isActive: true,
+          isOrganic: liveProduct!.isOrganic || false,
+          isWeighable: liveProduct!.isWeighable || false,
+        };
+
+        const result = addItem(productToAdd, qtyToAdd);
+        if (result.success) {
+          addedItems.push(item.productName);
+        } else {
+          outOfStockItems.push(item.productName);
+        }
+      }
+
+      // Alerta para produtos sem estoque
+      if (outOfStockItems.length > 0) {
+        const alertMsg = `Aviso de Estoque:\n\nOs seguintes produtos estão sem estoque e não puderam ser adicionados ao carrinho:\n• ${outOfStockItems.join('\n• ')}`;
+        alert(alertMsg);
+        setStockWarning(`Atenção: Os seguintes produtos estão sem estoque e não foram adicionados: ${outOfStockItems.join(', ')}.`);
+      }
+
+      // Feedback para itens adicionados
+      if (addedItems.length > 0) {
+        setActionFeedback(
+          outOfStockItems.length > 0
+            ? `${addedItems.length} produto(s) adicionado(s) ao carrinho. Alguns itens estavam sem estoque.`
+            : `Itens do pedido #${order.orderNumber} adicionados ao seu carrinho!`
+        );
+        setTimeout(() => setActionFeedback(null), 5000);
+      } else {
+        setActionFeedback(null);
+      }
+    } catch (err) {
+      console.error('Erro ao repetir pedido:', err);
+      alert('Ocorreu um erro ao verificar o estoque e repetir o pedido. Tente novamente.');
+    } finally {
+      setIsRepeatingOrder(null);
+    }
+  };
+
+  const handleWhatsAppContact = (order: Order) => {
+    const link = getOrderWhatsAppContactLink(order);
+    if (!link) {
+      alert(`O feirante da barraca "${order.vendorName || 'Feirante'}" não possui número de WhatsApp cadastrado.`);
+      return;
+    }
+    window.open(link, '_blank', 'noopener,noreferrer');
   };
 
   const getStatusBadge = (status: string) => {
@@ -208,6 +344,25 @@ function ClientOrdersContent() {
         </Link>
       </div>
 
+      {stockWarning && (
+        <div className="mb-6 p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-start justify-between gap-3 animate-in fade-in">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <span className="font-bold block text-amber-950">Aviso de Estoque</span>
+              <span>{stockWarning}</span>
+            </div>
+          </div>
+          <button
+            onClick={() => setStockWarning(null)}
+            className="text-amber-700 hover:text-amber-950 font-bold text-xs p-1 cursor-pointer"
+            title="Fechar aviso"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {actionFeedback && (
         <div className="mb-6 p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -232,8 +387,56 @@ function ClientOrdersContent() {
           </Link>
         </div>
       ) : (
-        <div className="space-y-4">
-          {orders.map((order) => (
+        <div className="space-y-6">
+          {/* Status Filter Tabs */}
+          <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+            {filterOptions.map((option) => {
+              const isActive = statusFilter === option.value;
+              const count = filterCounts[option.value];
+              return (
+                <button
+                  key={option.value}
+                  onClick={() => setStatusFilter(option.value)}
+                  className={`px-4 py-2 rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shrink-0 ${
+                    isActive
+                      ? 'bg-feira-700 text-white shadow-xs'
+                      : 'bg-white text-stone-600 hover:bg-stone-50 border border-stone-200 hover:border-stone-300'
+                  }`}
+                >
+                  <span>{option.label}</span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ${
+                      isActive
+                        ? 'bg-white/20 text-white'
+                        : 'bg-stone-100 text-stone-600'
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {filteredOrders.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-stone-200 p-10 text-center max-w-md mx-auto shadow-xs">
+              <div className="w-12 h-12 rounded-2xl bg-stone-100 text-stone-400 flex items-center justify-center mx-auto mb-3">
+                <ShoppingBag className="w-6 h-6" />
+              </div>
+              <h3 className="text-base font-bold text-stone-800">Nenhum pedido encontrado</h3>
+              <p className="text-xs text-stone-500 mt-1 mb-4">
+                Não há pedidos com o status &quot;{filterOptions.find((f) => f.value === statusFilter)?.label}&quot;.
+              </p>
+              <button
+                onClick={() => setStatusFilter('TODOS')}
+                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Ver todos os pedidos
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {filteredOrders.map((order) => (
             <div
               key={order.id}
               className="bg-white rounded-3xl border border-stone-200 shadow-xs p-5 sm:p-6 transition hover:border-stone-300 space-y-4"
@@ -258,9 +461,25 @@ function ClientOrdersContent() {
 
                 <div className="text-right sm:self-center">
                   <span className="text-xs text-stone-400 block font-bold">Total do Pedido</span>
-                  <span className="text-base sm:text-lg font-black text-feira-700">
-                    {formatCurrency(order.totalAmount)}
-                  </span>
+                  {order.discountAmount && order.discountAmount > 0 ? (
+                    <div>
+                      <div className="flex items-center justify-end gap-1.5">
+                        <span className="text-xs text-stone-400 line-through">
+                          {formatCurrency(order.originalAmount || (order.totalAmount + order.discountAmount))}
+                        </span>
+                        <span className="text-base sm:text-lg font-black text-feira-700">
+                          {formatCurrency(order.totalAmount)}
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded-md border border-emerald-200 inline-block mt-0.5">
+                        Cupom {order.couponCode}: -{formatCurrency(order.discountAmount)}
+                      </span>
+                    </div>
+                  ) : (
+                    <span className="text-base sm:text-lg font-black text-feira-700">
+                      {formatCurrency(order.totalAmount)}
+                    </span>
+                  )}
                 </div>
               </div>
 
@@ -334,6 +553,16 @@ function ClientOrdersContent() {
 
               <div className="pt-3 border-t border-stone-100 flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleWhatsAppContact(order)}
+                    className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                    title="Falar com o feirante no WhatsApp"
+                  >
+                    <MessageCircle className="w-3.5 h-3.5" />
+                    <span>Falar no WhatsApp</span>
+                  </button>
+
                   {order.paymentStatus === 'PENDENTE' && order.status !== 'CANCELADO' && (
                     <button
                       onClick={() => setPayOrder(order)}
@@ -394,15 +623,27 @@ function ClientOrdersContent() {
 
                 <button
                   onClick={() => handleRepeatOrder(order)}
-                  className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-feira-50 hover:text-feira-800 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer"
+                  disabled={isRepeatingOrder !== null}
+                  className="px-3.5 py-1.5 rounded-xl bg-stone-100 hover:bg-feira-50 hover:text-feira-800 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                  Repetir este Pedido
+                  {isRepeatingOrder === order.id ? (
+                    <>
+                      <div className="w-3.5 h-3.5 border-2 border-stone-600 border-t-transparent rounded-full animate-spin" />
+                      <span>Verificando estoque...</span>
+                    </>
+                  ) : (
+                    <>
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Repetir este Pedido</span>
+                    </>
+                  )}
                 </button>
               </div>
 
             </div>
           ))}
+            </div>
+          )}
         </div>
       )}
 

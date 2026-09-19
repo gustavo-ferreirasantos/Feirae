@@ -19,7 +19,7 @@ import {
 import Link from 'next/link';
 import { Order } from '@/types';
 import { formatCurrency, formatDate } from '@/lib/utils';
-import { getPickupPassWhatsAppLink } from '@/lib/whatsapp';
+import { getPickupPassWhatsAppLink, getOrderWhatsAppContactLink } from '@/lib/whatsapp';
 
 interface PickupPassModalProps {
   order: Order;
@@ -120,6 +120,13 @@ export function PickupPassModal({ order, onClose }: PickupPassModalProps) {
               </div>
             )}
 
+            {order.discountAmount && order.discountAmount > 0 && (
+              <div className="flex items-center justify-between text-[11px] text-emerald-700 font-semibold bg-emerald-50 -mx-1 px-2 py-1 rounded-lg">
+                <span>Desconto (Cupom {order.couponCode}):</span>
+                <span>-{formatCurrency(order.discountAmount)}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-between pt-2 border-t border-stone-200/70 text-[11px]">
               <span className="text-stone-500">Total:</span>
               <span className="font-extrabold text-feira-700 text-sm">{formatCurrency(order.totalAmount)}</span>
@@ -133,15 +140,21 @@ export function PickupPassModal({ order, onClose }: PickupPassModalProps) {
 
         {/* Footer */}
         <div className="p-4 bg-stone-50 border-t border-stone-100 space-y-2">
-          <a
-            href={getPickupPassWhatsAppLink(order)}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => {
+              const link = getOrderWhatsAppContactLink(order) || getPickupPassWhatsAppLink(order);
+              if (!link) {
+                alert(`O vendedor da barraca "${order.vendorName || 'Feirante'}" não possui número de WhatsApp cadastrado.`);
+                return;
+              }
+              window.open(link, '_blank', 'noopener,noreferrer');
+            }}
             className="w-full py-2.5 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
           >
             <MessageCircle className="w-4 h-4 fill-white/20" />
-            <span>Enviar no WhatsApp do Feirante</span>
-          </a>
+            <span>Falar no WhatsApp</span>
+          </button>
 
           <Link
             href={`/mapa?vendorId=${order.vendorId}`}

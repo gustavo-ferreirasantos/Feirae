@@ -72,24 +72,45 @@ export async function GET(request: Request) {
       where: whereClause,
       include: {
         items: true,
-        vendor: { select: { id: true, businessName: true, fairLocation: true, category: true, slug: true, userId: true } },
+        vendor: { 
+          select: { 
+            id: true, 
+            businessName: true, 
+            fairLocation: true, 
+            category: true, 
+            slug: true, 
+            userId: true,
+            whatsappPhone: true,
+            user: { select: { phone: true, whatsappPhone: true } }
+          } 
+        },
         client: { select: { id: true, name: true, phone: true, email: true } },
         review: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedOrders = fetchedDbOrders.map(o => ({
-      ...o,
-      createdAt: o.createdAt.toISOString ? o.createdAt.toISOString() : String(o.createdAt),
-      vendorName: o.vendor?.businessName,
-      items: o.items,
-      review: o.review ? {
-        ...o.review,
-        createdAt: o.review.createdAt.toISOString ? o.review.createdAt.toISOString() : String(o.review.createdAt),
-        vendorReplyAt: o.review.vendorReplyAt?.toISOString ? o.review.vendorReplyAt.toISOString() : o.review.vendorReplyAt,
-      } : undefined,
-    }));
+    const formattedOrders = fetchedDbOrders.map(o => {
+      const vendorPhone = o.vendor?.whatsappPhone || o.vendor?.user?.whatsappPhone || o.vendor?.user?.phone || undefined;
+      return {
+        ...o,
+        createdAt: o.createdAt.toISOString ? o.createdAt.toISOString() : String(o.createdAt),
+        vendorName: o.vendor?.businessName,
+        vendorPhone,
+        vendor: o.vendor ? {
+          id: o.vendor.id,
+          businessName: o.vendor.businessName,
+          fairLocation: o.vendor.fairLocation,
+          whatsappPhone: vendorPhone,
+        } : undefined,
+        items: o.items,
+        review: o.review ? {
+          ...o.review,
+          createdAt: o.review.createdAt.toISOString ? o.review.createdAt.toISOString() : String(o.review.createdAt),
+          vendorReplyAt: o.review.vendorReplyAt?.toISOString ? o.review.vendorReplyAt.toISOString() : o.review.vendorReplyAt,
+        } : undefined,
+      };
+    });
 
     return NextResponse.json(formattedOrders);
   } catch (err: any) {

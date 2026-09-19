@@ -137,7 +137,7 @@ export async function POST(request: Request) {
         unit: body.unit || 'kg',
         price: priceNum,
         stock: stockNum,
-        imageUrl: body.imageUrl || null,
+        imageUrl: body.imageUrl ? String(body.imageUrl).trim() : null,
         isOrganic: Boolean(body.isOrganic),
         isWeighable: Boolean(body.isWeighable),
         isActive: true,

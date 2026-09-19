@@ -36,11 +36,13 @@ import {
   Leaf,
   FileText,
   UploadCloud,
-  ShieldCheck
+  ShieldCheck,
+  Ticket,
+  AlertCircle
 } from 'lucide-react';
-import { Order, Product, Vendor, OrderStatus, PickupWindow, Review, FairLocation, VendorFairLocation } from '@/types';
+import { Order, Product, Vendor, OrderStatus, PickupWindow, Review, FairLocation, VendorFairLocation, Coupon } from '@/types';
 import { useUser } from '@/lib/user-context';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, DEFAULT_PRODUCT_IMAGE } from '@/lib/utils';
 import { OrderKanban } from '@/components/OrderKanban';
 import { StarRating } from '@/components/StarRating';
 import { LoginModal } from '@/components/LoginModal';
@@ -87,12 +89,26 @@ interface FinancialStats {
 
 export default function VendorDashboardPage() {
   const { currentUser, currentVendor, updateCurrentVendor, availableVendors, isLoaded } = useUser();
-  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL' | 'CERTIFICATIONS'>('KANBAN');
+  const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL' | 'CERTIFICATIONS' | 'COUPONS'>('KANBAN');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [pickupWindows, setPickupWindows] = useState<PickupWindow[]>([]);
   const [reviews, setReviews] = useState<Review[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Coupons State (US16)
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [couponFormCode, setCouponFormCode] = useState('');
+  const [couponFormType, setCouponFormType] = useState<'PERCENTAGE' | 'FIXED'>('PERCENTAGE');
+  const [couponFormValue, setCouponFormValue] = useState('');
+  const [couponFormMinOrder, setCouponFormMinOrder] = useState('');
+  const [couponFormMaxUses, setCouponFormMaxUses] = useState('');
+  const [couponFormExpiresAt, setCouponFormExpiresAt] = useState('');
+  const [couponSubmitting, setCouponSubmitting] = useState(false);
+  const [couponFormError, setCouponFormError] = useState<string | null>(null);
+  const [couponFeedback, setCouponFeedback] = useState<string | null>(null);
 
   // Organic Certification State (US27)
   const [certRegNumber, setCertRegNumber] = useState('');
@@ -270,10 +286,130 @@ export default function VendorDashboardPage() {
         });
         setAssignedFairsMap(map);
       }
+      fetch(`/api/coupons?vendorId=${vId}&includeInactive=true`).then(r => r.ok && r.json()).then(data => data && setCoupons(data)).catch(() => {});
     } catch (err) {
       console.error(err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const fetchCoupons = async () => {
+    const vId = activeVendorId || currentVendor?.id;
+    if (!vId) return;
+    setLoadingCoupons(true);
+    try {
+      const res = await fetch(`/api/coupons?vendorId=${vId}&includeInactive=true`);
+      if (res.ok) {
+        setCoupons(await res.json());
+      }
+    } catch (err) {
+      console.error('Erro ao carregar cupons:', err);
+    } finally {
+      setLoadingCoupons(false);
+    }
+  };
+
+  const handleCreateCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const vId = activeVendorId || currentVendor?.id;
+    if (!vId) return;
+
+    const formattedCode = couponFormCode.trim().toUpperCase();
+    if (!formattedCode || formattedCode.length < 3) {
+      setCouponFormError('O código do cupom deve ter pelo menos 3 caracteres.');
+      return;
+    }
+
+    const val = Number(couponFormValue);
+    if (isNaN(val) || val <= 0) {
+      setCouponFormError('Informe um valor de desconto válido maior que zero.');
+      return;
+    }
+
+    if (couponFormType === 'PERCENTAGE' && val > 100) {
+      setCouponFormError('O desconto percentual não pode ultrapassar 100%.');
+      return;
+    }
+
+    setCouponSubmitting(true);
+    setCouponFormError(null);
+
+    try {
+      const payload: any = {
+        code: formattedCode,
+        discountType: couponFormType,
+        discountValue: val,
+        minOrderValue: couponFormMinOrder ? Number(couponFormMinOrder) : 0,
+        maxUses: couponFormMaxUses ? Number(couponFormMaxUses) : null,
+        expiresAt: couponFormExpiresAt ? new Date(`${couponFormExpiresAt}T23:59:59.999`).toISOString() : null,
+        vendorId: vId,
+        active: true,
+      };
+
+      const res = await fetch('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        setCouponFormError(data.error || 'Erro ao cadastrar cupom.');
+        return;
+      }
+
+      setShowCouponModal(false);
+      setCouponFormCode('');
+      setCouponFormValue('');
+      setCouponFormMinOrder('');
+      setCouponFormMaxUses('');
+      setCouponFormExpiresAt('');
+      setCouponFeedback(`🎉 Cupom ${formattedCode} criado com sucesso e disponível para uso!`);
+      setTimeout(() => setCouponFeedback(null), 5000);
+      fetchCoupons();
+    } catch {
+      setCouponFormError('Erro de conexão ao cadastrar cupom.');
+    } finally {
+      setCouponSubmitting(false);
+    }
+  };
+
+  const handleToggleCouponActive = async (coupon: Coupon) => {
+    try {
+      const res = await fetch(`/api/coupons/${coupon.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !coupon.active }),
+      });
+      if (res.ok) {
+        setCouponFeedback(coupon.active ? `Cupom ${coupon.code} pausado.` : `Cupom ${coupon.code} ativado com sucesso!`);
+        setTimeout(() => setCouponFeedback(null), 4000);
+        fetchCoupons();
+      }
+    } catch {
+      alert('Erro ao alterar status do cupom.');
+    }
+  };
+
+  const handleDeleteCoupon = async (coupon: Coupon) => {
+    if (!confirm(`Deseja realmente excluir o cupom "${coupon.code}"? Se já possuir pedidos vinculados, ele será desativado para preservar o histórico.`)) return;
+    try {
+      const res = await fetch(`/api/coupons/${coupon.id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        if (data.deactivated) {
+          setCouponFeedback(`Cupom "${coupon.code}" possui pedidos vinculados e foi desativado para preservar o histórico de vendas.`);
+        } else {
+          setCouponFeedback(`Cupom "${coupon.code}" excluído com sucesso.`);
+        }
+        setTimeout(() => setCouponFeedback(null), 5000);
+        fetchCoupons();
+      } else {
+        alert(data.error || 'Erro ao remover cupom.');
+      }
+    } catch {
+      alert('Erro de conexão ao excluir cupom.');
     }
   };
 
@@ -525,7 +661,7 @@ export default function VendorDashboardPage() {
     setFormUnit('kg');
     setFormPrice('5.00');
     setFormStock('20');
-    setFormImage('https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80');
+    setFormImage('');
     setFormOrganic(false);
     setFormWeighable(false);
     setShowProductModal(true);
@@ -570,7 +706,7 @@ export default function VendorDashboardPage() {
         unit: formUnit,
         price: priceNum,
         stock: stockNum,
-        imageUrl: formImage,
+        imageUrl: formImage.trim() || null,
         isOrganic: formOrganic,
         isWeighable: formWeighable,
       };
@@ -992,14 +1128,76 @@ export default function VendorDashboardPage() {
               </div>
 
               <div>
-                <label className="font-semibold text-stone-700 block mb-1">URL da Imagem</label>
-                <input
-                  type="url"
-                  value={formImage}
-                  onChange={e => setFormImage(e.target.value)}
-                  placeholder="https://images.unsplash.com/..."
-                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none"
-                />
+                <label className="font-semibold text-stone-700 block mb-1.5">Imagem do Produto</label>
+                
+                {/* Image Preview & Placeholder */}
+                <div className="flex items-center gap-3.5 p-3 bg-stone-50 border border-stone-200 rounded-2xl mb-2.5">
+                  <div className="relative w-16 h-16 rounded-xl overflow-hidden bg-stone-200 shrink-0 border border-stone-200 shadow-2xs">
+                    <img
+                      src={formImage.trim() ? formImage.trim() : DEFAULT_PRODUCT_IMAGE}
+                      alt="Prévia do produto"
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                      }}
+                      className="w-full h-full object-cover"
+                    />
+                    {!formImage.trim() && (
+                      <span className="absolute bottom-0 inset-x-0 bg-stone-900/70 text-white text-[8px] font-bold text-center py-0.5 backdrop-blur-2xs">
+                        Padrão
+                      </span>
+                    )}
+                  </div>
+                  
+                  <div className="flex-1 min-w-0 space-y-1">
+                    <div className="text-xs">
+                      {formImage.trim() ? (
+                        <span className="font-bold text-emerald-700 flex items-center gap-1">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          Imagem personalizada
+                        </span>
+                      ) : (
+                        <span className="font-semibold text-stone-600">
+                          Imagem padrão (placeholder)
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-400 truncate">
+                      {formImage.trim() 
+                        ? 'Substitua a URL abaixo ou remova para voltar ao padrão.' 
+                        : 'Cole uma URL abaixo para substituir ou mantenha o padrão.'}
+                    </p>
+                    {formImage.trim() && (
+                      <button
+                        type="button"
+                        onClick={() => setFormImage('')}
+                        className="inline-flex items-center gap-1 text-[11px] font-bold text-red-600 hover:text-red-800 hover:underline cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                        Remover imagem (usar padrão)
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={formImage}
+                    onChange={e => setFormImage(e.target.value)}
+                    placeholder="https://images.unsplash.com/..."
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none"
+                  />
+                  {formImage.trim() && (
+                    <button
+                      type="button"
+                      onClick={() => setFormImage('')}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-xs font-bold text-stone-400 hover:text-stone-700 px-1.5 py-0.5 rounded hover:bg-stone-200/60"
+                      title="Limpar URL"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
               </div>
 
               <div className="flex items-center gap-2 pt-1">
@@ -1819,6 +2017,24 @@ export default function VendorDashboardPage() {
             <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" title="Em Análise" />
           )}
         </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('COUPONS');
+            fetchCoupons();
+          }}
+          className={`pb-3 text-xs sm:text-sm font-bold border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'COUPONS'
+              ? 'border-amber-600 text-amber-800'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Tag className="w-4 h-4" />
+          Cupons de Desconto
+          <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
+            {coupons.length}
+          </span>
+        </button>
       </div>
 
       {/* Tab 1: KANBAN */}
@@ -1982,14 +2198,15 @@ export default function VendorDashboardPage() {
                 {products.map(p => (
                   <tr key={p.id} className={`hover:bg-stone-50/60 ${!p.isActive ? 'opacity-40' : ''}`}>
                     <td className="p-3.5 flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-stone-100 overflow-hidden shrink-0">
-                        {p.imageUrl ? (
-                          <img src={p.imageUrl} alt={p.name} className="w-full h-full object-cover" />
-                        ) : (
-                          <div className="w-full h-full flex items-center justify-center text-stone-400">
-                            <Store className="w-4 h-4" />
-                          </div>
-                        )}
+                      <div className="w-10 h-10 rounded-xl bg-stone-100 overflow-hidden shrink-0 border border-stone-200/60">
+                        <img
+                          src={p.imageUrl?.trim() ? p.imageUrl.trim() : DEFAULT_PRODUCT_IMAGE}
+                          alt={p.name}
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                          }}
+                          className="w-full h-full object-cover"
+                        />
                       </div>
                       <div>
                         <div className="font-bold text-stone-900 flex items-center gap-1.5">
@@ -3351,6 +3568,325 @@ export default function VendorDashboardPage() {
             </form>
           </div>
 
+        </div>
+      )}
+
+      {/* Tab: COUPONS (US16) */}
+      {activeTab === 'COUPONS' && (
+        <div className="space-y-6 animate-in fade-in">
+          <div className="bg-white rounded-3xl border border-stone-200 p-6 sm:p-7 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <h2 className="text-lg font-bold text-stone-900">Cupons de Desconto da Barraca</h2>
+              </div>
+              <p className="text-xs text-stone-500 mt-1">
+                Cadastre e gerencie cupons promocionais para fidelizar clientes e impulsionar suas vendas na feira.
+              </p>
+            </div>
+
+            <button
+              onClick={() => {
+                setCouponFormCode('');
+                setCouponFormType('PERCENTAGE');
+                setCouponFormValue('');
+                setCouponFormMinOrder('');
+                setCouponFormMaxUses('');
+                setCouponFormExpiresAt('');
+                setCouponFormError(null);
+                setShowCouponModal(true);
+              }}
+              className="px-4 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold shadow-xs transition flex items-center gap-1.5 cursor-pointer shrink-0"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Criar Novo Cupom</span>
+            </button>
+          </div>
+
+          {couponFeedback && (
+            <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs font-semibold flex items-center gap-2 animate-in fade-in">
+              <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>{couponFeedback}</span>
+            </div>
+          )}
+
+          {loadingCoupons ? (
+            <div className="p-12 text-center text-stone-400 bg-white rounded-3xl border border-stone-200">
+              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-amber-600" />
+              <p className="text-xs font-semibold">Carregando cupons da barraca...</p>
+            </div>
+          ) : coupons.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-stone-200 p-12 text-center max-w-md mx-auto shadow-xs space-y-3">
+              <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto">
+                <Tag className="w-7 h-7" />
+              </div>
+              <h3 className="font-bold text-stone-900 text-base">Nenhum cupom cadastrado</h3>
+              <p className="text-xs text-stone-500 leading-relaxed">
+                Você ainda não possui cupons cadastrados para sua barraca. Crie um cupom com porcentagem de desconto ou valor fixo para divulgar nas redes ou na feira!
+              </p>
+              <button
+                onClick={() => {
+                  setCouponFormCode('');
+                  setCouponFormType('PERCENTAGE');
+                  setCouponFormValue('10');
+                  setCouponFormMinOrder('20');
+                  setCouponFormError(null);
+                  setShowCouponModal(true);
+                }}
+                className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-xl shadow-xs transition cursor-pointer"
+              >
+                + Criar Primeiro Cupom
+              </button>
+            </div>
+          ) : (
+            <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-bold uppercase text-[10px] tracking-wider">
+                    <tr>
+                      <th className="p-4">Código</th>
+                      <th className="p-4">Desconto</th>
+                      <th className="p-4">Pedido Mínimo</th>
+                      <th className="p-4">Usos / Limite</th>
+                      <th className="p-4">Validade</th>
+                      <th className="p-4">Status</th>
+                      <th className="p-4 text-right">Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-stone-100">
+                    {coupons.map((c) => {
+                      const isExpired = c.expiresAt && new Date(c.expiresAt).getTime() < Date.now();
+                      const isMaxed = c.maxUses !== null && c.maxUses !== undefined && c.usedCount >= c.maxUses;
+
+                      return (
+                        <tr key={c.id} className="hover:bg-stone-50/60 transition">
+                          <td className="p-4">
+                            <span className="font-mono font-extrabold text-stone-900 bg-stone-100 px-2.5 py-1 rounded-lg border border-stone-200 text-xs">
+                              {c.code}
+                            </span>
+                          </td>
+                          <td className="p-4">
+                            <span className="font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
+                              {c.discountType === 'PERCENTAGE' ? `${c.discountValue}% OFF` : `${formatCurrency(c.discountValue)} OFF`}
+                            </span>
+                          </td>
+                          <td className="p-4 text-stone-600">
+                            {c.minOrderValue > 0 ? formatCurrency(c.minOrderValue) : <span className="text-stone-400">Sem mínimo</span>}
+                          </td>
+                          <td className="p-4 text-stone-700 font-semibold">
+                            {c.usedCount} {c.maxUses ? `/ ${c.maxUses}` : 'utilizações'}
+                            {isMaxed && <span className="text-[10px] text-red-600 block font-bold">Limite atingido</span>}
+                          </td>
+                          <td className="p-4 text-stone-600">
+                            {c.expiresAt ? (
+                              <div>
+                                <span className={isExpired ? 'text-red-600 font-bold' : ''}>
+                                  {formatDate(c.expiresAt)}
+                                </span>
+                                {isExpired && <span className="text-[10px] text-red-500 block">Expirado</span>}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400">Sem expiração</span>
+                            )}
+                          </td>
+                          <td className="p-4">
+                            {c.active && !isExpired && !isMaxed ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                                Ativo
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600">
+                                <span className="w-1.5 h-1.5 rounded-full bg-stone-400" />
+                                {isExpired ? 'Expirado' : isMaxed ? 'Esgotado' : 'Pausado'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-4 text-right">
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => handleToggleCouponActive(c)}
+                                className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer ${
+                                  c.active
+                                    ? 'bg-amber-50 hover:bg-amber-100 text-amber-800'
+                                    : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800'
+                                }`}
+                                title={c.active ? 'Pausar cupom' : 'Ativar cupom'}
+                              >
+                                {c.active ? 'Pausar' : 'Ativar'}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCoupon(c)}
+                                className="p-1 text-stone-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition cursor-pointer"
+                                title="Excluir ou desativar cupom"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Modal: Cadastro de Novo Cupom (US16) */}
+      {showCouponModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-md overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-800 flex items-center justify-center">
+                  <Tag className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Novo Cupom de Desconto</h3>
+                  <p className="text-[11px] text-stone-500">Configure as regras de promoção para sua barraca</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCouponModal(false)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateCoupon} className="p-6 space-y-4 text-xs">
+              {couponFormError && (
+                <div className="p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-semibold flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 shrink-0" />
+                  <span>{couponFormError}</span>
+                </div>
+              )}
+
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">
+                  Código do Cupom <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={couponFormCode}
+                  onChange={e => setCouponFormCode(e.target.value.toUpperCase().replace(/[^A-Z0-9_-]/g, ''))}
+                  placeholder="Ex: PROMO10, FEIRA5, CLIENTEVIP"
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none uppercase font-mono font-bold text-sm tracking-wider"
+                />
+                <span className="text-[10px] text-stone-400 mt-0.5 block">
+                  O cliente informará este código no carrinho para obter o desconto.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Tipo de Desconto</label>
+                  <select
+                    value={couponFormType}
+                    onChange={e => setCouponFormType(e.target.value as any)}
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-semibold"
+                  >
+                    <option value="PERCENTAGE">Porcentagem (%)</option>
+                    <option value="FIXED">Valor Fixo (R$)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">
+                    Valor do Desconto <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0.01"
+                    max={couponFormType === 'PERCENTAGE' ? '100' : '9999'}
+                    required
+                    value={couponFormValue}
+                    onChange={e => setCouponFormValue(e.target.value)}
+                    placeholder={couponFormType === 'PERCENTAGE' ? 'Ex: 10 (%)' : 'Ex: 5.00 (R$)'}
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none font-bold"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Pedido Mínimo (R$)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={couponFormMinOrder}
+                    onChange={e => setCouponFormMinOrder(e.target.value)}
+                    placeholder="0.00 (opcional)"
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-semibold text-stone-700 block mb-1">Limite de Usos</label>
+                  <input
+                    type="number"
+                    min="1"
+                    step="1"
+                    value={couponFormMaxUses}
+                    onChange={e => setCouponFormMaxUses(e.target.value)}
+                    placeholder="Ilimitado (opcional)"
+                    className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-semibold text-stone-700 block mb-1">Data de Expiração</label>
+                <input
+                  type="date"
+                  value={couponFormExpiresAt}
+                  onChange={e => setCouponFormExpiresAt(e.target.value)}
+                  min={new Date().toISOString().split('T')[0]}
+                  className="w-full px-3.5 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-amber-500 focus:outline-none"
+                />
+                <span className="text-[10px] text-stone-400 mt-0.5 block">
+                  Deixe em branco se o cupom não tiver prazo de validade.
+                </span>
+              </div>
+
+              <div className="pt-3 border-t border-stone-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCouponModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={couponSubmitting}
+                  className="flex-1 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold shadow-xs flex items-center justify-center gap-1.5 disabled:opacity-70 cursor-pointer"
+                >
+                  {couponSubmitting ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Cadastrando...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Tag className="w-3.5 h-3.5" />
+                      <span>Cadastrar Cupom</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

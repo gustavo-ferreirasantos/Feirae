@@ -44,22 +44,65 @@ import {
   Scale,
   Compass,
   Leaf,
-  FileText
+  FileText,
+  Ticket,
+  Plus,
+  Trash2,
+  Power,
+  X,
+  Percent,
+  Tag,
+  ArrowRightLeft,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
 import { LoginModal } from '@/components/LoginModal';
-import { PeriodFilter } from '@/types';
+import { PeriodFilter, Coupon } from '@/types';
+
+function formatDateOnly(dateStr: string) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
 
 export default function AdminDashboardPage() {
   const { currentUser, isLoaded } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'COMMISSIONS' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION' | 'COUPONS'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
+  const [customStartDate, setCustomStartDate] = useState(() => new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0]);
+  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
+
+  // Coupons State (US16)
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [couponSearch, setCouponSearch] = useState('');
+  const [couponStatusFilter, setCouponStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL');
+  const [couponScopeFilter, setCouponScopeFilter] = useState<'ALL' | 'GLOBAL' | 'VENDOR'>('ALL');
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [couponForm, setCouponForm] = useState({
+    code: '',
+    discountType: 'PERCENTAGE' as 'PERCENTAGE' | 'FIXED',
+    discountValue: '',
+    minOrderValue: '',
+    maxUses: '',
+    expiresAt: '',
+    vendorId: '',
+  });
+  const [savingCoupon, setSavingCoupon] = useState(false);
+
+  // Commissions & Orders State
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderVendorTypeFilter, setOrderVendorTypeFilter] = useState<'ALL' | 'SUBSCRIBER' | 'STANDARD'>('ALL');
 
   // Simulator State (US26)
   const [simulatedGMV, setSimulatedGMV] = useState<number>(30000);
@@ -88,8 +131,19 @@ export default function AdminDashboardPage() {
     setActionError(message);
     setTimeout(() => setActionError(null), 5000);
   };
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const isAdmin = currentUser?.role === 'ADMIN';
+
+  const buildStatsUrl = (targetPeriod: PeriodFilter, start = customStartDate, end = customEndDate) => {
+    const params = new URLSearchParams();
+    params.set('period', targetPeriod);
+    if (targetPeriod === 'custom') {
+      if (start) params.set('startDate', start);
+      if (end) params.set('endDate', end);
+    }
+    return `/api/admin/stats?${params.toString()}`;
+  };
 
   const loadAdminData = async (targetPeriod = period) => {
     if (!isAdmin) {
@@ -99,15 +153,18 @@ export default function AdminDashboardPage() {
     try {
       setLoadingStats(true);
       setLoadError(false);
-      const [statsRes, vendRes, prodRes] = await Promise.all([
-        fetch(`/api/admin/stats?period=${targetPeriod}`),
+      const statsUrl = buildStatsUrl(targetPeriod);
+      const [statsRes, vendRes, prodRes, coupRes] = await Promise.all([
+        fetch(statsUrl),
         fetch('/api/vendors?includeAll=true'),
         fetch('/api/products?includeInactive=true'),
+        fetch('/api/coupons?includeInactive=true'),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       else setLoadError(true);
       if (vendRes.ok) setVendors(await vendRes.json());
       if (prodRes.ok) setProducts(await prodRes.json());
+      if (coupRes.ok) setCoupons(await coupRes.json());
     } catch (err) {
       console.error(err);
       setLoadError(true);
@@ -119,12 +176,60 @@ export default function AdminDashboardPage() {
 
   const handlePeriodChange = async (newPeriod: PeriodFilter) => {
     setPeriod(newPeriod);
+    if (newPeriod === 'custom') {
+      // Se já houver datas preenchidas, aplica o filtro automaticamente
+      if (customStartDate || customEndDate) {
+        setLoadingStats(true);
+        try {
+          const res = await fetch(buildStatsUrl('custom', customStartDate, customEndDate));
+          if (res.ok) setStats(await res.json());
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoadingStats(false);
+        }
+      }
+      return;
+    }
+
     setLoadingStats(true);
     try {
       const res = await fetch(`/api/admin/stats?period=${newPeriod}`);
       if (res.ok) setStats(await res.json());
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const handleApplyCustomDates = async () => {
+    if (!customStartDate && !customEndDate) {
+      alert('Por favor, informe ao menos uma data inicial ou final.');
+      return;
+    }
+    if (customStartDate && customEndDate && customStartDate > customEndDate) {
+      alert('A data inicial não pode ser posterior à data final.');
+      return;
+    }
+
+    setPeriod('custom');
+    setLoadingStats(true);
+    try {
+      const res = await fetch(buildStatsUrl('custom', customStartDate, customEndDate));
+      if (res.ok) {
+        setStats(await res.json());
+        const startFormatted = customStartDate ? formatDateOnly(customStartDate) : 'Início';
+        const endFormatted = customEndDate ? formatDateOnly(customEndDate) : 'Hoje';
+        setActionFeedback(`Métricas atualizadas para o período: ${startFormatted} até ${endFormatted}.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao carregar métricas para o período selecionado.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao atualizar métricas.');
     } finally {
       setLoadingStats(false);
     }
@@ -169,6 +274,40 @@ export default function AdminDashboardPage() {
         setActionFeedback(`Destaque patrocinado da barraca ${nextFeatured ? 'ativado' : 'pausado'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
         // Reload stats
+        const statsRes = await fetch(buildStatsUrl(period));
+        if (statsRes.ok) setStats(await statsRes.json());
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleSubscriberVendor = async (vendorId: string, currentSubscriber: boolean) => {
+    const nextSubscriber = !currentSubscriber;
+    try {
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isSubscriber: nextSubscriber,
+          plan: nextSubscriber ? 'PRO' : 'FREE',
+          commissionRate: nextSubscriber ? 0 : 0.10,
+        }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? { 
+          ...v, 
+          isSubscriber: nextSubscriber,
+          plan: nextSubscriber ? 'PRO' : 'FREE',
+          commissionRate: nextSubscriber ? 0 : 0.10,
+        } : v));
+        setActionFeedback(
+          nextSubscriber 
+            ? 'Plano alterado para Assinante Pro (Isento de comissão por pedido).'
+            : 'Plano alterado para Vendedor Padrão (Taxa de 10% de comissão simulada).'
+        );
+        setTimeout(() => setActionFeedback(null), 4000);
+        // Reload stats and all data
         const statsRes = await fetch(`/api/admin/stats?period=${period}`);
         if (statsRes.ok) setStats(await statsRes.json());
       } else {
@@ -295,6 +434,367 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const fetchAdminCoupons = async () => {
+    setLoadingCoupons(true);
+    try {
+      const res = await fetch('/api/coupons?includeInactive=true');
+      if (res.ok) {
+        const data = await res.json();
+        setCoupons(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar cupons:', err);
+    } finally {
+      setLoadingCoupons(false);
+    }
+  };
+
+  const handleToggleCouponActive = async (couponId: string, currentActive: boolean) => {
+    try {
+      const res = await fetch(`/api/coupons/${couponId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !currentActive }),
+      });
+      if (res.ok) {
+        setCoupons(prev => prev.map(c => c.id === couponId ? { ...c, active: !currentActive } : c));
+        setActionFeedback(`Cupom ${!currentActive ? 'ativado' : 'pausado'} com sucesso.`);
+        setTimeout(() => setActionFeedback(null), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao atualizar status do cupom.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao atualizar status do cupom.');
+    }
+  };
+
+  const handleDeleteCoupon = async (couponId: string, couponCode: string) => {
+    if (!confirm(`Deseja realmente remover o cupom "${couponCode}"? Se ele já possuir pedidos vinculados, será desativado para preservar o histórico de compras.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/coupons/${couponId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data.deactivated) {
+          setCoupons(prev => prev.map(c => c.id === couponId ? { ...c, active: false } : c));
+          setActionFeedback(`Cupom "${couponCode}" possui pedidos e foi desativado para preservar o histórico.`);
+        } else {
+          setCoupons(prev => prev.filter(c => c.id !== couponId));
+          setActionFeedback(`Cupom "${couponCode}" excluído com sucesso.`);
+        }
+        setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        alert(data.error || 'Erro ao excluir cupom.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao excluir cupom.');
+    }
+  };
+
+  const handleCreateAdminCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = couponForm.code.trim().toUpperCase();
+    const discountVal = parseFloat(couponForm.discountValue);
+    const minOrder = couponForm.minOrderValue ? parseFloat(couponForm.minOrderValue) : 0;
+    const maxUsesVal = couponForm.maxUses ? parseInt(couponForm.maxUses, 10) : undefined;
+
+    if (!code) {
+      alert('Por favor, informe o código do cupom.');
+      return;
+    }
+    if (isNaN(discountVal) || discountVal <= 0) {
+      alert('Informe um valor de desconto válido maior que zero.');
+      return;
+    }
+    if (couponForm.discountType === 'PERCENTAGE' && discountVal > 100) {
+      alert('O desconto percentual não pode ser maior que 100%.');
+      return;
+    }
+    if (couponForm.expiresAt) {
+      const exp = new Date(couponForm.expiresAt);
+      if (exp <= new Date()) {
+        alert('A data de validade deve ser uma data futura.');
+        return;
+      }
+    }
+
+    setSavingCoupon(true);
+    try {
+      const res = await fetch('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          discountType: couponForm.discountType,
+          discountValue: discountVal,
+          minOrderValue: minOrder,
+          maxUses: maxUsesVal,
+          expiresAt: couponForm.expiresAt ? new Date(couponForm.expiresAt).toISOString() : null,
+          vendorId: couponForm.vendorId ? couponForm.vendorId : null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Erro ao cadastrar cupom.');
+        return;
+      }
+
+      setCoupons(prev => [data, ...prev]);
+      setShowCouponModal(false);
+      setCouponForm({
+        code: '',
+        discountType: 'PERCENTAGE',
+        discountValue: '',
+        minOrderValue: '',
+        maxUses: '',
+        expiresAt: '',
+        vendorId: '',
+      });
+      setActionFeedback(`Cupom "${code}" cadastrado com sucesso e já está disponível para uso!`);
+      setTimeout(() => setActionFeedback(null), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao criar cupom.');
+    } finally {
+      setSavingCoupon(false);
+    }
+  };
+
+  // ================= RELATÓRIOS & DOWNLOAD (CSV) =================
+  const handleExportOrdersCSV = () => {
+    const ordersList = stats?.recentOrders || [];
+    if (!ordersList.length) {
+      alert('Não há pedidos disponíveis para exportação no momento.');
+      return;
+    }
+
+    const headers = [
+      'Codigo do Pedido',
+      'Data e Hora',
+      'Cliente',
+      'Email Cliente',
+      'Telefone Cliente',
+      'Barraca / Feirante',
+      'Modelo do Feirante',
+      'Itens',
+      'Forma de Pagamento',
+      'Status do Pedido',
+      'Valor do Pedido (R$)',
+      'Taxa Plataforma (%)',
+      'Comissao Feirae (R$)',
+      'Repasse Liquido Feirante (R$)'
+    ];
+
+    const rows = ordersList.map((o: any) => {
+      const dateFormatted = new Date(o.createdAt).toLocaleString('pt-BR');
+      const planLabel = o.isSubscriber ? 'Assinante Pro (Isento)' : 'Vendedor Padrão';
+      const rateLabel = o.isSubscriber ? '0%' : `${((o.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const methodLabel = o.paymentMethod === 'RETIRADA'
+        ? 'No Ato (Dinheiro/Pix Barraca)'
+        : o.paymentMethod === 'MERCADO_PAGO_PIX'
+          ? 'App (Mercado Pago Pix)'
+          : o.paymentMethod || 'Outro';
+
+      return [
+        `"${o.orderNumber}"`,
+        `"${dateFormatted}"`,
+        `"${(o.clientName || 'Cliente').replace(/"/g, '""')}"`,
+        `"${o.clientEmail || '-'}"`,
+        `"${o.clientPhone || '-'}"`,
+        `"${(o.vendorName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${planLabel}"`,
+        o.itemsCount || 1,
+        `"${methodLabel}"`,
+        `"${o.status}"`,
+        (o.totalAmount || 0).toFixed(2).replace('.', ','),
+        `"${rateLabel}"`,
+        (o.commissionAmount || 0).toFixed(2).replace('.', ','),
+        (o.netAmount || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrdersAmount = ordersList.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+    const totalCommissions = ordersList.reduce((sum: number, o: any) => sum + (o.commissionAmount || 0), 0);
+    const totalNet = ordersList.reduce((sum: number, o: any) => sum + (o.netAmount || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"Emitido em ${new Date().toLocaleString('pt-BR')}"`,
+      `"${ordersList.length} pedidos"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrdersAmount.toFixed(2).replace('.', ','),
+      '""',
+      totalCommissions.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-pedidos-comissoes-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportVendorsCSV = () => {
+    if (!vendors.length) {
+      alert('Não há feirantes cadastrados para exportação.');
+      return;
+    }
+
+    const commList = stats?.commissionsByVendor || [];
+    const commMap = new Map<string, any>();
+    commList.forEach((c: any) => commMap.set(c.vendorId, c));
+
+    const headers = [
+      'Barraca / Feirante',
+      'Responsavel',
+      'Email',
+      'Telefone',
+      'Categoria',
+      'Localizacao na Feira',
+      'Ponto / Numero',
+      'Modelo de Cobranca',
+      'Taxa de Comissao (%)',
+      'Status na Vitrine',
+      'Destaque Patrocinado',
+      'Total de Pedidos',
+      'Volume Bruto GMV (R$)',
+      'Comissao Gerada (R$)',
+      'Repasse Liquido (R$)'
+    ];
+
+    const rows = vendors.map(v => {
+      const cv = commMap.get(v.id) || {
+        ordersCount: 0,
+        totalGMV: 0,
+        totalCommission: 0,
+        totalNet: 0,
+        commissionRate: v.isSubscriber ? 0 : (v.commissionRate ?? 0.10)
+      };
+
+      const isSub = v.isSubscriber || v.plan === 'PRO';
+      const rateLabel = isSub ? '0%' : `${((cv.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const activeLabel = v.active ? 'Aprovada & Ativa' : 'Aguardando Aprovação';
+      const featuredLabel = v.isFeatured ? 'Sim (Patrocinada)' : 'Não';
+
+      return [
+        `"${(v.businessName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${(v.user?.name || '-').replace(/"/g, '""')}"`,
+        `"${v.user?.email || '-'}"`,
+        `"${v.user?.phone || v.whatsappPhone || '-'}"`,
+        `"${(v.category || '-').replace(/"/g, '""')}"`,
+        `"${(v.fairLocation || '-').replace(/"/g, '""')}"`,
+        `"${v.boothNumber || '-'}"`,
+        `"${isSub ? 'Assinante Pro (Isento)' : 'Vendedor Padrão'}"`,
+        `"${rateLabel}"`,
+        `"${activeLabel}"`,
+        `"${featuredLabel}"`,
+        cv.ordersCount || 0,
+        (cv.totalGMV || 0).toFixed(2).replace('.', ','),
+        (cv.totalCommission || 0).toFixed(2).replace('.', ','),
+        (cv.totalNet || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrders = commList.reduce((sum: number, v: any) => sum + (v.ordersCount || 0), 0);
+    const totalGMV = commList.reduce((sum: number, v: any) => sum + (v.totalGMV || 0), 0);
+    const totalCommission = commList.reduce((sum: number, v: any) => sum + (v.totalCommission || 0), 0);
+    const totalNet = commList.reduce((sum: number, v: any) => sum + (v.totalNet || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"${vendors.length} feirantes cadastrados"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrders,
+      totalGMV.toFixed(2).replace('.', ','),
+      totalCommission.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-feirantes-consolidado-feirae-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportExecutiveSummaryCSV = () => {
+    if (!stats) {
+      alert('Dados estatísticos ainda não carregados.');
+      return;
+    }
+
+    const dateFormatted = new Date().toLocaleString('pt-BR');
+    const periodLabel = period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Geral (Acumulado)';
+
+    const rows = [
+      ['"RELATORIO EXECUTIVO & FINANCEIRO - FEIRAE"'],
+      [`"Data de Emissao";"${dateFormatted}"`],
+      [`"Periodo de Referencia";"${periodLabel}"`],
+      [''],
+      ['"INDICADOR";"VALOR"'],
+      [`"Feirantes Ativos na Vitrine";"${stats.activeVendors || 0}"`],
+      [`"Feirantes Assinantes Pro";"${stats.subscribersCount || 0}"`],
+      [`"Barracas em Destaque Patrocinado";"${stats.featuredVendorsCount || 0}"`],
+      [`"Total de Pedidos Realizados";"${stats.totalOrders || 0}"`],
+      [`"Volume Bruto Transacionado (GMV)";"R$ ${(stats.totalGMV || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Comissoes Simuladas de Pedidos";"R$ ${(stats.simulatedCommissionTotal || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita Recorrente de Assinaturas (MRR)";"R$ ${(stats.subscriptionRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita de Destaques Patrocinados";"R$ ${(stats.sponsorshipRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Faturamento Real Acumulado da Plataforma";"R$ ${(stats.totalMonetizationEstimate || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Take Rate Efetivo da Plataforma";"${stats.totalGMV > 0 ? (((stats.totalMonetizationEstimate || 0) / stats.totalGMV) * 100).toFixed(1).replace('.', ',') + '%' : '0%'}"`],
+      [`"Ticket Medio por Pedido";"${stats.totalOrders > 0 ? ((stats.totalGMV || 0) / stats.totalOrders).toFixed(2).replace('.', ',') : '0,00'}"`],
+    ];
+
+    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-executivo-financeiro-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
   if (!isLoaded) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center text-stone-400 animate-pulse">
@@ -401,6 +901,22 @@ export default function AdminDashboardPage() {
     );
   });
 
+  const filteredCoupons = coupons.filter(c => {
+    const query = couponSearch.toLowerCase();
+    const matchesSearch = !couponSearch ||
+      c.code.toLowerCase().includes(query) ||
+      (c.vendor?.businessName && c.vendor.businessName.toLowerCase().includes(query));
+
+    if (!matchesSearch) return false;
+    if (couponStatusFilter === 'ACTIVE' && !c.active) return false;
+    if (couponStatusFilter === 'PAUSED' && c.active) return false;
+
+    if (couponScopeFilter === 'GLOBAL' && c.vendorId) return false;
+    if (couponScopeFilter === 'VENDOR' && !c.vendorId) return false;
+
+    return true;
+  });
+
   const renderProductAnalytics = () => {
     const pa = stats?.productAnalytics;
     if (!pa) return null;
@@ -408,7 +924,9 @@ export default function AdminDashboardPage() {
     const periodLabel = 
       period === '7d' ? 'Últimos 7 dias' : 
       period === '30d' ? 'Últimos 30 dias' : 
-      'Todo o Histórico (Geral)';
+      period === 'custom'
+        ? `Personalizado (${customStartDate ? formatDateOnly(customStartDate) : 'Início'} até ${customEndDate ? formatDateOnly(customEndDate) : 'Hoje'})`
+        : 'Todo o Histórico (Geral)';
 
     // Step calculations for the funnel bars
     const maxFunnelVal = Math.max(pa.funnel.showcaseViews, 1);
@@ -884,6 +1402,410 @@ export default function AdminDashboardPage() {
     );
   };
 
+  const renderCommissionsTab = () => {
+    const rawOrders: any[] = stats?.recentOrders || [];
+    const commissionsByVendor: any[] = stats?.commissionsByVendor || [];
+
+    const filteredOrders = rawOrders.filter(o => {
+      const matchesSearch = 
+        !orderSearch ||
+        o.orderNumber?.toLowerCase().includes(orderSearch.toLowerCase()) ||
+        o.clientName?.toLowerCase().includes(orderSearch.toLowerCase()) ||
+        o.vendorName?.toLowerCase().includes(orderSearch.toLowerCase());
+
+      const matchesVendorType =
+        orderVendorTypeFilter === 'ALL' ||
+        (orderVendorTypeFilter === 'SUBSCRIBER' && o.isSubscriber) ||
+        (orderVendorTypeFilter === 'STANDARD' && !o.isSubscriber);
+
+      return matchesSearch && matchesVendorType;
+    });
+
+    const totalOrdersCount = filteredOrders.length;
+    const totalOrdersGMV = filteredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    const totalOrdersCommission = filteredOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+    const totalOrdersNet = filteredOrders.reduce((acc, o) => acc + (o.netAmount || 0), 0);
+
+    return (
+      <div className="space-y-8 animate-in fade-in">
+        {/* Banner de Comissões */}
+        <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
+                <Coins className="w-3.5 h-3.5 text-emerald-300" />
+                Auditoria de Monetização
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                Comissão Simulada por Pedido & Mensalidade de Vendedores
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                Acompanhe o cálculo de comissões demonstrativas geradas por cada pedido para validar hipóteses de monetização.
+                Vendedores <strong>Assinantes Pro</strong> são isentos (taxa 0%), enquanto <strong>Vendedores Padrão</strong> possuem comissão calculada (10%).
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-sm shrink-0 self-start md:self-auto text-xs space-y-1">
+              <div className="text-emerald-200 font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Valores 100% Demonstrativos</span>
+              </div>
+              <p className="text-stone-300 text-[11px]">Sem cobrança financeira real no momento.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume (GMV)</span>
+              <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats?.totalGMV || 0)}</span>
+              <span className="text-[11px] text-stone-500 font-semibold mt-0.5 block">{stats?.totalOrders || 0} pedidos confirmados</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-emerald-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-emerald-50/40 to-white">
+            <div>
+              <span className="text-xs font-semibold text-emerald-900 block uppercase tracking-wider">Comissões Simuladas</span>
+              <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats?.simulatedCommissionTotal || 0)}</span>
+              <span className="text-[11px] text-emerald-700 font-semibold mt-0.5 block">Total acumulado nos pedidos</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+              <Coins className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-purple-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-purple-900 block uppercase tracking-wider">Assinaturas MRR</span>
+              <span className="text-2xl font-black text-purple-700 mt-1 block">{formatCurrency((stats?.subscribersCount || 0) * 49.9)}</span>
+              <span className="text-[11px] text-purple-600 font-semibold mt-0.5 block">{stats?.subscribersCount || 0} feirante(s) isento(s)</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between bg-stone-50/60">
+            <div>
+              <span className="text-xs font-semibold text-stone-600 block uppercase tracking-wider">Faturamento Real Acumulado</span>
+              <span className="text-2xl font-black text-stone-900 mt-1 block">{formatCurrency(stats?.totalMonetizationEstimate || 0)}</span>
+              <span className="text-[11px] text-stone-500 font-semibold mt-0.5 block">Assinaturas + Patrocínios + Comissões</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-stone-200 text-stone-800 flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Seção 1: Painel de Comissões por Feirante / Vendedor */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div>
+              <h3 className="font-extrabold text-stone-900 text-base flex items-center gap-2">
+                <Store className="w-4 h-4 text-feira-600" />
+                Painel Consolidado de Comissões por Vendedor
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Exibe o total acumulado de vendas brutas, comissões simuladas e repasse líquido para cada barraca.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar planilha consolidada de feirantes em CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
+              <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-xs font-bold w-fit">
+                {commissionsByVendor.length} barraca(s) cadastradas
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold uppercase text-[10px]">
+                <tr>
+                  <th className="p-3.5">Barraca / Feirante</th>
+                  <th className="p-3.5">Modelo / Tipo</th>
+                  <th className="p-3.5 text-center">Taxa de Comissão</th>
+                  <th className="p-3.5 text-center">Pedidos</th>
+                  <th className="p-3.5 text-right">Volume Bruto (GMV)</th>
+                  <th className="p-3.5 text-right">Comissão Simulada</th>
+                  <th className="p-3.5 text-right">Repasse Líquido</th>
+                  <th className="p-3.5 text-right">Ação / Modelo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {commissionsByVendor.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-stone-400">
+                      Nenhum feirante com dados disponíveis.
+                    </td>
+                  </tr>
+                ) : (
+                  commissionsByVendor.map(cv => (
+                    <tr key={cv.vendorId} className="hover:bg-stone-50/60 transition">
+                      <td className="p-3.5 font-bold text-stone-900">
+                        {cv.vendorName}
+                      </td>
+                      <td className="p-3.5">
+                        {cv.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            Assinante Pro (Isento)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            Vendedor Padrão (10%)
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center font-mono font-semibold">
+                        {cv.isSubscriber ? (
+                          <span className="text-emerald-700 font-extrabold">0% (Isento)</span>
+                        ) : (
+                          <span className="text-stone-800 font-bold">{(cv.commissionRate * 100).toFixed(0)}%</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center font-medium text-stone-600">
+                        {cv.ordersCount}
+                      </td>
+                      <td className="p-3.5 text-right font-bold text-stone-900">
+                        {formatCurrency(cv.totalGMV)}
+                      </td>
+                      <td className="p-3.5 text-right font-bold">
+                        {cv.isSubscriber ? (
+                          <span className="text-emerald-700 font-extrabold">R$ 0,00 (Isento)</span>
+                        ) : (
+                          <span className="text-amber-700 font-extrabold">{formatCurrency(cv.totalCommission)}</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-right font-bold text-stone-700">
+                        {formatCurrency(cv.totalNet)}
+                      </td>
+                      <td className="p-3.5 text-right">
+                        <button
+                          onClick={() => handleToggleSubscriberVendor(cv.vendorId, cv.isSubscriber)}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs ${
+                            cv.isSubscriber
+                              ? 'border-stone-200 text-stone-700 hover:bg-stone-100'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                          title={cv.isSubscriber ? 'Mudar para Vendedor Padrão (Taxa 10%)' : 'Mudar para Assinante Pro (Isento de Comissão)'}
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-stone-500" />
+                          <span>{cv.isSubscriber ? 'Mudar para Padrão (10%)' : 'Mudar para Assinante (Isento)'}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Seção 2: Tabela Detalhada de Cada Pedido com Comissão */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div>
+              <h3 className="font-extrabold text-stone-900 text-base flex items-center gap-2">
+                <FileText className="w-4 h-4 text-feira-600" />
+                Auditoria Detalhada de Pedidos & Comissões
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Visualize a comissão simulada calculada individualmente para cada pré-pedido confirmado na plataforma.
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filter by vendor type */}
+              <div className="flex bg-stone-100 p-1 rounded-xl text-xs">
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'ALL' ? 'bg-white text-stone-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('SUBSCRIBER')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'SUBSCRIBER' ? 'bg-white text-emerald-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Assinantes (Isentos)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('STANDARD')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'STANDARD' ? 'bg-white text-blue-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Padrão (Comissão %)
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar pedido, cliente ou barraca..."
+                  value={orderSearch}
+                  onChange={e => setOrderSearch(e.target.value)}
+                  className="pl-8 pr-3.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none w-64"
+                />
+              </div>
+
+              {/* Export Orders Button */}
+              <button
+                onClick={handleExportOrdersCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                title="Exportar todos os pedidos e comissões em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar Pedidos (CSV)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold uppercase text-[10px]">
+                <tr>
+                  <th className="p-3.5">Pedido / Data</th>
+                  <th className="p-3.5">Cliente</th>
+                  <th className="p-3.5">Barraca / Feirante</th>
+                  <th className="p-3.5">Tipo do Feirante</th>
+                  <th className="p-3.5 text-right">Valor do Pedido</th>
+                  <th className="p-3.5 text-center">Taxa</th>
+                  <th className="p-3.5 text-right">Comissão Simulada</th>
+                  <th className="p-3.5 text-right">Líquido do Feirante</th>
+                  <th className="p-3.5 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-stone-400">
+                      Nenhum pedido encontrado para os filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOrders.map(o => (
+                    <tr key={o.id} className="hover:bg-stone-50/60 transition">
+                      <td className="p-3.5">
+                        <div className="font-bold text-stone-900 font-mono">{o.orderNumber}</div>
+                        <div className="text-[10px] text-stone-400">
+                          {new Date(o.createdAt).toLocaleDateString('pt-BR')} {new Date(o.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+
+                      <td className="p-3.5">
+                        <div className="font-bold text-stone-900">{o.clientName}</div>
+                        {o.clientPhone && <div className="text-[10px] text-stone-400">{o.clientPhone}</div>}
+                      </td>
+
+                      <td className="p-3.5 font-medium text-stone-800">
+                        {o.vendorName}
+                      </td>
+
+                      <td className="p-3.5">
+                        {o.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Check className="w-3 h-3 text-emerald-600" /> Assinante (Isento)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            Vendedor Padrão
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold text-stone-900">
+                        {formatCurrency(o.totalAmount)}
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono text-[11px]">
+                        {o.isSubscriber ? (
+                          <span className="text-emerald-700 font-bold">0%</span>
+                        ) : (
+                          <span className="text-stone-700 font-semibold">{(o.commissionRate * 100).toFixed(0)}%</span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold">
+                        {o.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700 font-extrabold">
+                            R$ 0,00 <span className="text-[10px] font-normal text-emerald-600">(Isento)</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-800 font-black">
+                            {formatCurrency(o.commissionAmount)}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold text-emerald-800">
+                        {formatCurrency(o.netAmount)}
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          o.status === 'RETIRADO'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : o.status === 'CANCELADO'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {o.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {filteredOrders.length > 0 && (
+                <tfoot className="bg-stone-100/90 font-extrabold text-stone-900 border-t-2 border-stone-200">
+                  <tr>
+                    <td colSpan={4} className="p-3.5 text-right uppercase tracking-wider text-[11px] text-stone-600">
+                      Total ({totalOrdersCount} pedidos filtrados):
+                    </td>
+                    <td className="p-3.5 text-right font-black text-stone-900">
+                      {formatCurrency(totalOrdersGMV)}
+                    </td>
+                    <td></td>
+                    <td className="p-3.5 text-right font-black text-emerald-800">
+                      {formatCurrency(totalOrdersCommission)}
+                    </td>
+                    <td className="p-3.5 text-right font-black text-stone-900">
+                      {formatCurrency(totalOrdersNet)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderMonetizationSimulator = () => {
     // Instant calculations (US26)
     const commissionRevenue = (simulatedGMV * simulatedCommissionRate) / 100;
@@ -1247,13 +2169,25 @@ export default function AdminDashboardPage() {
                   {formatCurrency(realRevenue)}
                 </span>
                 <span className="text-xs text-stone-500 font-semibold block mt-0.5">
-                  Receita real gerada (Assinaturas + Patrocínios)
+                  Receita real acumulada (Assinaturas + Patrocínios + Comissões)
                 </span>
               </div>
               <div className="space-y-1.5 pt-2 border-t border-stone-200/80 text-xs text-stone-700">
                 <div className="flex justify-between">
                   <span>GMV Real Movimentado:</span>
                   <span className="font-bold text-stone-900">{formatCurrency(realGMV)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Comissões Simuladas:</span>
+                  <span className="font-bold text-emerald-700">{formatCurrency(stats?.simulatedCommissionTotal || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Receita de Assinaturas (MRR):</span>
+                  <span className="font-bold text-purple-700">{formatCurrency((stats?.subscribersCount || 0) * 49.9)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Receita de Patrocínios:</span>
+                  <span className="font-bold text-amber-700">{formatCurrency(stats?.sponsorshipRevenue || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Pedidos Reais Concluídos:</span>
@@ -1352,13 +2286,14 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Period Filter (Últimos 7 dias, 30 dias ou Geral) */}
-          <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200 text-xs shadow-xs">
+          {/* Period Filter (Últimos 7 dias, 30 dias, Geral ou Personalizado) */}
+          <div className="flex flex-wrap items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200 text-xs shadow-xs">
             <div className="flex items-center gap-1 px-2 text-stone-500 font-semibold">
               <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
               <span className="hidden sm:inline">Período:</span>
             </div>
             <button
+              type="button"
               onClick={() => handlePeriodChange('7d')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === '7d'
@@ -1369,6 +2304,7 @@ export default function AdminDashboardPage() {
               7 dias
             </button>
             <button
+              type="button"
               onClick={() => handlePeriodChange('30d')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === '30d'
@@ -1379,6 +2315,7 @@ export default function AdminDashboardPage() {
               30 dias
             </button>
             <button
+              type="button"
               onClick={() => handlePeriodChange('all')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === 'all'
@@ -1388,6 +2325,107 @@ export default function AdminDashboardPage() {
             >
               Geral
             </button>
+            <button
+              type="button"
+              onClick={() => handlePeriodChange('custom')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                period === 'custom'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              Personalizado
+            </button>
+          </div>
+
+          {/* Form com Data inicial, Data final e Botão Aplicar */}
+          {period === 'custom' && (
+            <div className="flex flex-wrap items-center gap-2.5 bg-white p-1.5 px-3 rounded-2xl border border-purple-200 shadow-xs animate-in fade-in text-xs">
+              <div className="flex items-center gap-1.5">
+                <label className="font-semibold text-stone-600 text-[11px] whitespace-nowrap">Data inicial:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                  className="px-2.5 py-1 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-stone-800 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <label className="font-semibold text-stone-600 text-[11px] whitespace-nowrap">Data final:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                  className="px-2.5 py-1 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-stone-800 text-xs"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleApplyCustomDates}
+                className="px-3.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-xs transition cursor-pointer text-xs flex items-center gap-1"
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
+
+          {/* Export Reports Dropdown Menu */}
+          <div className="relative">
+            {isExportMenuOpen && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsExportMenuOpen(false)}
+              />
+            )}
+            <button
+              onClick={() => setIsExportMenuOpen(prev => !prev)}
+              className="px-3.5 py-2 rounded-2xl bg-white border border-stone-200 text-stone-800 flex items-center gap-2 text-xs font-bold shadow-xs hover:bg-stone-50 transition cursor-pointer relative z-50"
+              title="Baixar relatórios em planilha CSV compatível com Excel e Google Sheets"
+            >
+              <Download className="w-3.5 h-3.5 text-purple-600" />
+              <span>Exportar Relatórios</span>
+              <ArrowDown className={`w-3 h-3 text-stone-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 space-y-1 text-xs">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Planilhas CSV (Excel / Sheets)
+                </div>
+                <button
+                  onClick={handleExportOrdersCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Pedidos & Comissões (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Auditoria detalhada com valores e taxas</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportVendorsCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <Store className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Consolidado de Feirantes (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Cadastro, GMV e repasses por barraca</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportExecutiveSummaryCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Fechamento Executivo (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Indicadores gerais, receita e Take Rate</div>
+                  </div>
+                </button>
+              </div>
+            )}
           </div>
 
           {pendingVendorsCount > 0 && (
@@ -1437,6 +2475,23 @@ export default function AdminDashboardPage() {
         >
           <TrendingUp className="w-4 h-4" />
           Visão Geral & Indicadores
+        </button>
+
+        <button
+          onClick={() => setActiveTab('COMMISSIONS')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'COMMISSIONS'
+              ? 'border-emerald-600 text-emerald-900 font-bold'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Coins className="w-4 h-4 text-emerald-600" />
+          Comissões & Pedidos
+          {stats?.totalOrders > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+              {stats.totalOrders}
+            </span>
+          )}
         </button>
 
         <button
@@ -1511,6 +2566,21 @@ export default function AdminDashboardPage() {
             </span>
           )}
         </button>
+
+        <button
+          onClick={() => setActiveTab('COUPONS')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'COUPONS'
+              ? 'border-purple-600 text-purple-900'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Ticket className="w-4 h-4 text-purple-600" />
+          Cupons de Desconto
+          <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
+            {coupons.length}
+          </span>
+        </button>
       </div>
 
       {/* ================= TAB 1: OVERVIEW ================= */}
@@ -1518,63 +2588,78 @@ export default function AdminDashboardPage() {
         <div className="space-y-8 animate-in fade-in">
           
           {/* Metrics Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Feirantes Ativos</span>
-                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
+                <span className="text-2xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
                 <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">Exibidos na vitrine</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                <Store className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                <Store className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Total Pedidos</span>
-                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
+                <span className="text-2xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
                 <span className="text-[11px] text-blue-600 font-semibold mt-1 block">Acumulados</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
-                <ShoppingBag className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume (GMV)</span>
-                <span className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
                 <span className="text-[11px] text-stone-500 font-semibold mt-1 block">Movimentado na feira</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-emerald-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-emerald-50/40 to-white">
+              <div>
+                <span className="text-xs font-semibold text-emerald-900 block uppercase tracking-wider">Comissão Simulada</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">
+                  {formatCurrency(stats.simulatedCommissionTotal || 0)}
+                </span>
+                <span className="text-[11px] text-emerald-700 font-semibold mt-1 block">
+                  Demonstrativo
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <Coins className="w-4 h-4 text-emerald-700" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Assinaturas MRR</span>
-                <span className="text-2xl sm:text-3xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
+                <span className="text-2xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
                 <span className="text-[11px] text-purple-600 font-semibold mt-1 block">R$ 49,90/mês</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-amber-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
+            <div className="bg-white p-4 rounded-3xl border border-amber-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
               <div>
                 <span className="text-xs font-semibold text-amber-900 block uppercase tracking-wider">Patrocínios</span>
-                <span className="text-2xl sm:text-3xl font-black text-amber-600 mt-1 block">
+                <span className="text-2xl font-black text-amber-600 mt-1 block">
                   {formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}
                 </span>
                 <span className="text-[11px] text-amber-700 font-semibold mt-1 block">
                   {stats.featuredVendorsCount || 0} barraca(s) ativas
                 </span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5 fill-amber-500" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4 fill-amber-500" />
               </div>
             </div>
           </div>
@@ -1583,7 +2668,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-3">
               <h3 className="font-extrabold text-stone-900 text-base">Faturamento & Monetização da Feira</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90) e <strong>Destaques Patrocinados</strong> (R$ 29,90/semana), mantendo 0% de comissão de intermediação para os produtores.
+                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90), <strong>Destaques Patrocinados</strong> (R$ 29,90/semana) e <strong>Comissões Simuladas</strong> de vendedores padrão (10% demonstrativo).
               </p>
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1.5">
                 <div className="flex justify-between font-semibold">
@@ -1594,15 +2679,19 @@ export default function AdminDashboardPage() {
                   <span>Receita de Destaques Patrocinados (US19):</span>
                   <span className="text-amber-700">{formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}</span>
                 </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Comissões Simuladas de Pedidos:</span>
+                  <span className="text-emerald-700 font-bold">{formatCurrency(stats.simulatedCommissionTotal || 0)}</span>
+                </div>
                 <div className="flex justify-between font-extrabold text-stone-900 pt-1.5 border-t border-stone-200">
-                  <span>Faturamento Total Simulado da Plataforma:</span>
+                  <span>Faturamento Real Acumulado da Plataforma:</span>
                   <span className="text-emerald-700 font-black text-sm">
-                    {formatCurrency(stats.totalMonetizationEstimate || (stats.subscribersCount * 49.9 + (stats.featuredVendorsCount || 0) * 29.9))}
+                    {formatCurrency(stats.totalMonetizationEstimate)}
                   </span>
                 </div>
                 <div className="flex justify-between text-stone-500 pt-1">
-                  <span>Economia gerada para os feirantes vs marketplaces:</span>
-                  <span className="text-emerald-600 font-bold">~ {formatCurrency(stats.totalGMV * 0.15)}</span>
+                  <span>Economia gerada para feirantes assinantes vs taxas de mercado:</span>
+                  <span className="text-emerald-600 font-bold">~ {formatCurrency(stats.totalGMV * 0.10)}</span>
                 </div>
               </div>
             </div>
@@ -1656,6 +2745,13 @@ export default function AdminDashboardPage() {
           {/* Section: Monetization Simulator & GMV Projections (US26) */}
           {renderMonetizationSimulator()}
 
+        </div>
+      )}
+
+      {/* ================= TAB: COMISSÕES E PEDIDOS ================= */}
+      {activeTab === 'COMMISSIONS' && (
+        <div className="space-y-8 animate-in fade-in">
+          {renderCommissionsTab()}
         </div>
       )}
 
@@ -1716,6 +2812,16 @@ export default function AdminDashboardPage() {
                   Ativas ({vendors.filter(v => v.active === true).length})
                 </button>
               </div>
+
+              {/* Export Vendors Button */}
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar cadastro consolidado de feirantes em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
             </div>
           </div>
 
@@ -1727,6 +2833,7 @@ export default function AdminDashboardPage() {
                   <th className="p-3.5">Categoria</th>
                   <th className="p-3.5">Localização na Feira</th>
                   <th className="p-3.5">Contato do Feirante</th>
+                  <th className="p-3.5">Plano / Comissão</th>
                   <th className="p-3.5">Status de Moderação</th>
                   <th className="p-3.5">Destaque Patrocinado</th>
                   <th className="p-3.5 text-right">Ação do Administrador</th>
@@ -1735,7 +2842,7 @@ export default function AdminDashboardPage() {
               <tbody className="divide-y divide-stone-100">
                 {filteredVendors.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-stone-400">
+                    <td colSpan={8} className="p-8 text-center text-stone-400">
                       Nenhuma barraca encontrada com os filtros selecionados.
                     </td>
                   </tr>
@@ -1770,6 +2877,28 @@ export default function AdminDashboardPage() {
                       <td className="p-3.5 space-y-0.5 text-[11px] text-stone-500">
                         {v.user?.email && <div className="flex items-center gap-1"><Mail className="w-3 h-3 text-stone-400" /> {v.user.email}</div>}
                         {v.user?.phone && <div className="flex items-center gap-1"><Phone className="w-3 h-3 text-stone-400" /> {v.user.phone}</div>}
+                      </td>
+
+                      <td className="p-3.5">
+                        <div className="space-y-1">
+                          {v.isSubscriber ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 w-fit">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" /> Assinante Pro (Isento)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1 w-fit">
+                              Padrão (10% comissão)
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleToggleSubscriberVendor(v.id, v.isSubscriber)}
+                            className="text-[10px] text-stone-500 hover:text-stone-800 underline flex items-center gap-1 cursor-pointer"
+                            title="Alternar entre Assinante Pro e Vendedor Padrão"
+                          >
+                            <ArrowRightLeft className="w-2.5 h-2.5" />
+                            {v.isSubscriber ? 'Mudar p/ Padrão' : 'Mudar p/ Assinante'}
+                          </button>
+                        </div>
                       </td>
 
                       <td className="p-3.5">
@@ -2238,6 +3367,469 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ================= TAB 7: COUPONS ================= */}
+      {activeTab === 'COUPONS' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {/* Header & Action */}
+          <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-800 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1 relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-purple-200 text-xs font-bold">
+                <Ticket className="w-3.5 h-3.5 text-purple-300" />
+                Gestão Geral de Cupons
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black">Central de Cupons Promocionais</h2>
+              <p className="text-xs text-purple-200 max-w-xl">
+                Crie cupons globais para campanhas de toda a feira ou específicos para bancas de produtores. Acompanhe a taxa de uso e gerencie a vigência em tempo real.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCouponModal(true)}
+              className="px-5 py-3 rounded-2xl bg-white text-purple-900 font-extrabold text-xs shadow-md hover:bg-purple-50 transition shrink-0 flex items-center gap-2 cursor-pointer relative z-10"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Cupom
+            </button>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Total de Cupons</span>
+              <span className="text-2xl font-black text-stone-900 mt-1 block">{coupons.length}</span>
+              <span className="text-[11px] text-stone-500 font-medium">Cadastrados na plataforma</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Cupons Ativos</span>
+              <span className="text-2xl font-black text-emerald-600 mt-1 block">
+                {coupons.filter(c => c.active).length}
+              </span>
+              <span className="text-[11px] text-emerald-700 font-medium">Prontos para utilização</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Total Utilizações</span>
+              <span className="text-2xl font-black text-purple-700 mt-1 block">
+                {coupons.reduce((acc, c) => acc + (c.usedCount || 0), 0)}
+              </span>
+              <span className="text-[11px] text-purple-600 font-medium">Resgatados em compras</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Cupons Globais</span>
+              <span className="text-2xl font-black text-indigo-600 mt-1 block">
+                {coupons.filter(c => !c.vendorId).length}
+              </span>
+              <span className="text-[11px] text-indigo-700 font-medium">Válidos em toda a feira</span>
+            </div>
+          </div>
+
+          {/* Filters Row */}
+          <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar por código ou banca..."
+                value={couponSearch}
+                onChange={e => setCouponSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none text-xs"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setCouponStatusFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'ALL'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Todos ({coupons.length})
+                </button>
+                <button
+                  onClick={() => setCouponStatusFilter('ACTIVE')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'ACTIVE'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Ativos ({coupons.filter(c => c.active).length})
+                </button>
+                <button
+                  onClick={() => setCouponStatusFilter('PAUSED')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'PAUSED'
+                      ? 'bg-white text-stone-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Pausados ({coupons.filter(c => !c.active).length})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setCouponScopeFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'ALL'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Todos Âmbitos
+                </button>
+                <button
+                  onClick={() => setCouponScopeFilter('GLOBAL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'GLOBAL'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Globais
+                </button>
+                <button
+                  onClick={() => setCouponScopeFilter('VENDOR')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'VENDOR'
+                      ? 'bg-white text-purple-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Por Feirante
+                </button>
+              </div>
+
+              <button
+                onClick={fetchAdminCoupons}
+                disabled={loadingCoupons}
+                className="p-2.5 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-600 transition cursor-pointer"
+                title="Atualizar lista"
+              >
+                <RefreshCcw className={`w-4 h-4 ${loadingCoupons ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Coupons Table */}
+          <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-stone-50/80 border-b border-stone-200 text-stone-500 font-bold uppercase text-[11px] tracking-wider">
+                    <th className="p-3.5">Código</th>
+                    <th className="p-3.5">Âmbito / Banca</th>
+                    <th className="p-3.5">Desconto</th>
+                    <th className="p-3.5">Regras Mínimas</th>
+                    <th className="p-3.5">Utilizações</th>
+                    <th className="p-3.5">Validade</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
+                  {filteredCoupons.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-stone-400">
+                        Nenhum cupom promocional encontrado com os filtros selecionados.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCoupons.map(c => {
+                      const isExpired = c.expiresAt && new Date(c.expiresAt) < new Date();
+                      const isExhausted = c.maxUses && c.usedCount >= c.maxUses;
+                      
+                      return (
+                        <tr key={c.id} className="hover:bg-stone-50/60 transition">
+                          <td className="p-3.5">
+                            <span className="font-mono font-black text-sm px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200/80 tracking-wider">
+                              {c.code}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.vendorId ? (
+                              <div className="flex items-center gap-1.5">
+                                <Store className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                                <span className="font-bold text-stone-900">
+                                  {c.vendor?.businessName || 'Banca Específica'}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-black text-[10px] border border-indigo-200">
+                                <Sparkles className="w-3 h-3 text-indigo-600" />
+                                Global (Toda a Feira)
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            <span className="font-extrabold text-stone-900 text-sm">
+                              {c.discountType === 'PERCENTAGE'
+                                ? `${c.discountValue}% OFF`
+                                : `${formatCurrency(c.discountValue)} OFF`}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 text-stone-600">
+                            {c.minOrderValue && c.minOrderValue > 0 ? (
+                              <span>Mínimo {formatCurrency(c.minOrderValue)}</span>
+                            ) : (
+                              <span className="text-stone-400">Sem pedido mínimo</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-stone-900">{c.usedCount}</span>
+                              <span className="text-stone-400">
+                                / {c.maxUses ? `${c.maxUses} usos` : '∞ ilimitado'}
+                              </span>
+                            </div>
+                            {isExhausted && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md inline-block mt-0.5">
+                                Limite esgotado
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.expiresAt ? (
+                              <div>
+                                <span className={isExpired ? 'line-through text-red-500' : 'text-stone-700'}>
+                                  {new Date(c.expiresAt).toLocaleDateString('pt-BR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                                {isExpired && (
+                                  <span className="block text-[10px] text-red-600 font-bold">
+                                    Vencido
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400">Sem expiração</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.active ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Ativo
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                                <XCircle className="w-3 h-3 text-stone-400" />
+                                Pausado
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5 text-right space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => handleToggleCouponActive(c.id, c.active)}
+                              className={`px-3 py-1.5 rounded-xl font-bold transition text-xs cursor-pointer inline-flex items-center gap-1 ${
+                                c.active
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              }`}
+                              title={c.active ? 'Pausar cupom' : 'Ativar cupom'}
+                            >
+                              <Power className="w-3 h-3" />
+                              {c.active ? 'Pausar' : 'Ativar'}
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteCoupon(c.id, c.code)}
+                              className="px-2.5 py-1.5 rounded-xl bg-stone-50 hover:bg-red-50 hover:text-red-700 hover:border-red-200 border border-stone-200 text-stone-500 font-bold transition cursor-pointer text-xs inline-flex items-center gap-1"
+                              title="Excluir ou desativar cupom"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Excluir
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Modal: Cadastrar Novo Cupom (Admin) */}
+      {showCouponModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-purple-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center">
+                  <Ticket className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Cadastrar Novo Cupom</h3>
+                  <p className="text-[11px] text-stone-500">Defina o código, desconto e regras de aplicação</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCouponModal(false)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAdminCoupon} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Código do Cupom *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: FEIRAE15, BEMVINDO"
+                  value={couponForm.code}
+                  onChange={e => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl font-mono uppercase font-black tracking-wider focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Âmbito / Banca Elegível
+                </label>
+                <select
+                  value={couponForm.vendorId}
+                  onChange={e => setCouponForm({ ...couponForm, vendorId: e.target.value })}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                >
+                  <option value="">✨ Global — Válido em todas as bancas da Feira</option>
+                  {vendors.map(v => (
+                    <option key={v.id} value={v.id}>
+                      🏪 {v.businessName}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-stone-400 mt-1 block">
+                  Selecione &apos;Global&apos; para conceder o benefício em qualquer barraca parceira.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Tipo de Desconto *
+                  </label>
+                  <select
+                    value={couponForm.discountType}
+                    onChange={e => setCouponForm({ ...couponForm, discountType: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                  >
+                    <option value="PERCENTAGE">Porcentagem (%)</option>
+                    <option value="FIXED">Valor Fixo (R$)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Valor do Desconto *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={couponForm.discountType === 'PERCENTAGE' ? '100' : undefined}
+                      required
+                      placeholder={couponForm.discountType === 'PERCENTAGE' ? '10' : '5.00'}
+                      value={couponForm.discountValue}
+                      onChange={e => setCouponForm({ ...couponForm, discountValue: e.target.value })}
+                      className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-bold"
+                    />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-stone-400">
+                      {couponForm.discountType === 'PERCENTAGE' ? '%' : 'R$'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Valor Mínimo do Pedido (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00 (opcional)"
+                    value={couponForm.minOrderValue}
+                    onChange={e => setCouponForm({ ...couponForm, minOrderValue: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Limite Máximo de Usos
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Ilimitado se vazio"
+                    value={couponForm.maxUses}
+                    onChange={e => setCouponForm({ ...couponForm, maxUses: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Data de Validade (Expiração)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={couponForm.expiresAt}
+                  onChange={e => setCouponForm({ ...couponForm, expiresAt: e.target.value })}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-stone-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCouponModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCoupon}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {savingCoupon ? 'Salvando...' : 'Criar Cupom'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

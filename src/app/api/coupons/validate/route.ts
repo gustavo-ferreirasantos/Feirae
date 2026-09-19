@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     const body = await request.json();
     const { code, cartTotal, vendorId } = body;
 
-    if (!code || typeof code !== 'string') {
+    if (!code || typeof code !== 'string' || !code.trim()) {
       return NextResponse.json({ valid: false, error: 'Código de cupom não informado.' }, { status: 400 });
     }
 
@@ -17,6 +17,9 @@ export async function POST(request: Request) {
 
     const coupon = await prisma.coupon.findUnique({
       where: { code: formattedCode },
+      include: {
+        vendor: { select: { id: true, businessName: true } },
+      },
     });
 
     if (!coupon) {
@@ -42,12 +45,22 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    if (coupon.vendorId && vendorId) {
+    if (coupon.vendorId) {
+      if (!vendorId) {
+        return NextResponse.json({
+          valid: false,
+          error: `Este cupom é exclusivo para a banca ${coupon.vendor?.businessName || 'específica'}.`,
+        }, { status: 400 });
+      }
+
       const vendor = await prisma.vendor.findFirst({
         where: { OR: [{ id: vendorId }, { slug: vendorId }, { userId: vendorId }] },
       });
-      if (vendor && coupon.vendorId !== vendor.id) {
-        return NextResponse.json({ valid: false, error: 'Este cupom é exclusivo para outra banca de feirante.' }, { status: 400 });
+      if (!vendor || coupon.vendorId !== vendor.id) {
+        return NextResponse.json({
+          valid: false,
+          error: 'Este cupom é exclusivo para outra banca de feirante.',
+        }, { status: 400 });
       }
     }
 
@@ -76,4 +89,3 @@ export async function POST(request: Request) {
     return NextResponse.json({ valid: false, error: 'Erro ao validar cupom no banco de dados.' }, { status: 500 });
   }
 }
-
