@@ -111,9 +111,10 @@ export async function POST(request: Request) {
         where: { OR: [{ id: body.vendorId }, { slug: body.vendorId }, { userId: body.vendorId }] },
         select: { id: true }
       });
-      if (vendor) {
-        resolvedVendorId = vendor.id;
+      if (!vendor) {
+        return NextResponse.json({ error: 'Feirante informado para o cupom não foi encontrado.' }, { status: 404 });
       }
+      resolvedVendorId = vendor.id;
     }
 
     const created = await prisma.coupon.create({

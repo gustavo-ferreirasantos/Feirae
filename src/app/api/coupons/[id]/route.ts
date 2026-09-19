@@ -1,5 +1,22 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
+import { Prisma } from '@prisma/client';
+
+// A vendor acting on a coupon must own it; global coupons (vendorId null) are platform-only.
+async function assertCouponScope(existing: { vendorId: string | null }, requestedVendorId?: string | null) {
+  if (!requestedVendorId) return null; // admin / platform call
+  const vendor = await prisma.vendor.findFirst({
+    where: { OR: [{ id: requestedVendorId }, { slug: requestedVendorId }, { userId: requestedVendorId }] },
+    select: { id: true },
+  });
+  if (!vendor || existing.vendorId !== vendor.id) {
+    return NextResponse.json(
+      { error: 'Acesso não autorizado. Você só pode alterar cupons da sua própria barraca.' },
+      { status: 403 }
+    );
+  }
+  return null;
+}
 
 export const dynamic = 'force-dynamic';
 
@@ -51,14 +68,51 @@ export async function PATCH(
       return NextResponse.json({ error: 'Cupom não encontrado para atualização.' }, { status: 404 });
     }
 
+    const denied = await assertCouponScope(existing, body.vendorId || request.headers.get('x-vendor-id'));
+    if (denied) return denied;
+
+    const data: Prisma.CouponUpdateInput = {};
+
+    if (body.active !== undefined) data.active = Boolean(body.active);
+
+    if (body.maxUses !== undefined) {
+      if (body.maxUses === null || body.maxUses === '') {
+        data.maxUses = null;
+      } else {
+        const maxUses = Number(body.maxUses);
+        if (!Number.isInteger(maxUses) || maxUses <= 0) {
+          return NextResponse.json({ error: 'O limite de utilizações deve ser um número inteiro maior que zero.' }, { status: 400 });
+        }
+        if (maxUses < existing.usedCount) {
+          return NextResponse.json({ error: `O limite não pode ser menor que os ${existing.usedCount} usos já realizados.` }, { status: 400 });
+        }
+        data.maxUses = maxUses;
+      }
+    }
+
+    if (body.minOrderValue !== undefined) {
+      const minOrderValue = Number(body.minOrderValue);
+      if (!Number.isFinite(minOrderValue) || minOrderValue < 0) {
+        return NextResponse.json({ error: 'O valor mínimo do pedido não pode ser negativo.' }, { status: 400 });
+      }
+      data.minOrderValue = minOrderValue;
+    }
+
+    if (body.expiresAt !== undefined) {
+      if (!body.expiresAt) {
+        data.expiresAt = null;
+      } else {
+        const expiresAt = new Date(body.expiresAt);
+        if (isNaN(expiresAt.getTime())) {
+          return NextResponse.json({ error: 'Data de expiração inválida.' }, { status: 400 });
+        }
+        data.expiresAt = expiresAt;
+      }
+    }
+
     const updated = await prisma.coupon.update({
       where: { id: existing.id },
-      data: {
-        ...(body.active !== undefined && { active: Boolean(body.active) }),
-        ...(body.maxUses !== undefined && { maxUses: body.maxUses ? Number(body.maxUses) : null }),
-        ...(body.minOrderValue !== undefined && { minOrderValue: Number(body.minOrderValue) }),
-        ...(body.expiresAt !== undefined && { expiresAt: body.expiresAt ? new Date(body.expiresAt) : null }),
-      },
+      data,
       include: {
         vendor: { select: { id: true, businessName: true } },
       },
@@ -88,6 +142,10 @@ export async function DELETE(
     if (!existing) {
       return NextResponse.json({ error: 'Cupom não encontrado para exclusão.' }, { status: 404 });
     }
+
+    const { searchParams } = new URL(request.url);
+    const denied = await assertCouponScope(existing, searchParams.get('vendorId') || request.headers.get('x-vendor-id'));
+    if (denied) return denied;
 
     // Regra: Na exclusão, não remova um cupom que já esteja associado a pedidos para não comprometer o histórico. Nesse caso, desative o cupom.
     const associatedOrdersCount = await prisma.order.count({

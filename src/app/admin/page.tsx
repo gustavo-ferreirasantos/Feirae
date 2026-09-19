@@ -70,12 +70,17 @@ function formatDateOnly(dateStr: string) {
   return dateStr;
 }
 
+function toLocalDateInput(date: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
 export default function AdminDashboardPage() {
   const { currentUser, isLoaded } = useUser();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'COMMISSIONS' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION' | 'COUPONS'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
-  const [customStartDate, setCustomStartDate] = useState(() => new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0]);
-  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [customStartDate, setCustomStartDate] = useState(() => toLocalDateInput(new Date(Date.now() - 15 * 86400000)));
+  const [customEndDate, setCustomEndDate] = useState(() => toLocalDateInput(new Date()));
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);

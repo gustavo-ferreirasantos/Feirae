@@ -380,12 +380,15 @@ export default function VendorDashboardPage() {
       const res = await fetch(`/api/coupons/${coupon.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ active: !coupon.active }),
+        body: JSON.stringify({ active: !coupon.active, vendorId: activeVendorId }),
       });
       if (res.ok) {
         setCouponFeedback(coupon.active ? `Cupom ${coupon.code} pausado.` : `Cupom ${coupon.code} ativado com sucesso!`);
         setTimeout(() => setCouponFeedback(null), 4000);
         fetchCoupons();
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao alterar status do cupom.');
       }
     } catch {
       alert('Erro ao alterar status do cupom.');
@@ -395,7 +398,7 @@ export default function VendorDashboardPage() {
   const handleDeleteCoupon = async (coupon: Coupon) => {
     if (!confirm(`Deseja realmente excluir o cupom "${coupon.code}"? Se já possuir pedidos vinculados, ele será desativado para preservar o histórico.`)) return;
     try {
-      const res = await fetch(`/api/coupons/${coupon.id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/coupons/${coupon.id}?vendorId=${encodeURIComponent(activeVendorId)}`, { method: 'DELETE' });
       const data = await res.json();
       if (res.ok) {
         if (data.deactivated) {
@@ -3705,6 +3708,9 @@ export default function VendorDashboardPage() {
                             )}
                           </td>
                           <td className="p-4 text-right">
+                            {!c.vendorId ? (
+                              <span className="text-[10px] font-semibold text-stone-400">Cupom da plataforma</span>
+                            ) : (
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 type="button"
@@ -3727,6 +3733,7 @@ export default function VendorDashboardPage() {
                                 <Trash2 className="w-3.5 h-3.5" />
                               </button>
                             </div>
+                            )}
                           </td>
                         </tr>
                       );

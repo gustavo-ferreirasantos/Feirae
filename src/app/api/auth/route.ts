@@ -22,12 +22,12 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Nenhuma conta cadastrada encontrada com este e-mail.' }, { status: 404 });
     }
 
-    // If password was supplied, verify it
-    if (password && dbUser.passwordHash) {
-      const isValid = verifyPassword(password, dbUser.passwordHash);
-      if (!isValid) {
-        return NextResponse.json({ error: 'Senha incorreta. Verifique e tente novamente.' }, { status: 401 });
-      }
+    if (!password || typeof password !== 'string') {
+      return NextResponse.json({ error: 'Senha obrigatória.' }, { status: 400 });
+    }
+
+    if (!verifyPassword(password, dbUser.passwordHash)) {
+      return NextResponse.json({ error: 'Senha incorreta. Verifique e tente novamente.' }, { status: 401 });
     }
 
     return NextResponse.json({

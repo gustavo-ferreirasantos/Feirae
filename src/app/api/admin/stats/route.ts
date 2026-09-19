@@ -20,16 +20,32 @@ export async function GET(request: Request) {
     let startDate: Date | null = null;
     let endDate: Date | null = null;
 
+    // Fair days are in Brazil (UTC-3); the server may run in UTC, so dates carry an explicit offset.
+    const parseDayBoundary = (value: string, endOfDay: boolean): Date | null => {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+      const parsed = new Date(`${value}T${endOfDay ? '23:59:59.999' : '00:00:00'}-03:00`);
+      return isNaN(parsed.getTime()) ? null : parsed;
+    };
+
     if (period === '7d') {
       startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
     } else if (period === '30d') {
       startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
     } else if (period === 'custom') {
       if (startDateParam) {
-        startDate = new Date(`${startDateParam}T00:00:00`);
+        startDate = parseDayBoundary(startDateParam, false);
+        if (!startDate) {
+          return NextResponse.json({ error: 'Data inicial inválida. Use o formato AAAA-MM-DD.' }, { status: 400 });
+        }
       }
       if (endDateParam) {
-        endDate = new Date(`${endDateParam}T23:59:59.999`);
+        endDate = parseDayBoundary(endDateParam, true);
+        if (!endDate) {
+          return NextResponse.json({ error: 'Data final inválida. Use o formato AAAA-MM-DD.' }, { status: 400 });
+        }
+      }
+      if (startDate && endDate && startDate.getTime() > endDate.getTime()) {
+        return NextResponse.json({ error: 'A data inicial não pode ser posterior à data final.' }, { status: 400 });
       }
     }
 
@@ -70,10 +86,10 @@ export async function GET(request: Request) {
 
     const ordersWithCommission = orders.map((o: any) => {
       const isPro = o.vendor?.plan === 'PRO' || o.vendor?.isSubscriber || o.vendor?.commissionRate === 0;
-      // Default standard vendor commission rate is 10% (0.10) or custom vendor.commissionRate
-      const commissionRate = isPro ? 0 : (o.vendor?.commissionRate ?? 0.10);
-      const isCancelled = o.status === 'CANCELADO';
-      const commissionAmount = isCancelled ? 0 : Number(((o.totalAmount || 0) * commissionRate).toFixed(2));
+      // Same rule as the vendor financial statement: 5% default, charged only on settled (RETIRADO) orders
+      const commissionRate = isPro ? 0 : (o.vendor?.commissionRate ?? 0.05);
+      const isSettled = o.status === 'RETIRADO';
+      const commissionAmount = !isSettled ? 0 : Number(((o.totalAmount || 0) * commissionRate).toFixed(2));
       const netAmount = Number(((o.totalAmount || 0) - commissionAmount).toFixed(2));
 
       return {
@@ -118,7 +134,7 @@ export async function GET(request: Request) {
 
     vendors.forEach((v: any) => {
       const isPro = v.plan === 'PRO' || v.isSubscriber || v.commissionRate === 0;
-      const rate = isPro ? 0 : (v.commissionRate ?? 0.10);
+      const rate = isPro ? 0 : (v.commissionRate ?? 0.05);
       commissionsByVendorMap.set(v.id, {
         vendorId: v.id,
         vendorName: v.businessName,
@@ -300,7 +316,7 @@ export async function GET(request: Request) {
       totalMonetizationEstimate,
       ordersByStatus,
       commissionsByVendor,
-      recentOrders: ordersWithCommission,
+      recentOrders: ordersWithCommission.slice(0, 200),
       productAnalytics: {
         period,
         funnel: {

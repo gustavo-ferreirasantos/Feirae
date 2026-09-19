@@ -1,6 +1,8 @@
 import { PrismaClient } from '@prisma/client';
+import { hashPassword } from '../src/lib/auth';
 
 const prisma = new PrismaClient();
+const DEMO_PASSWORD_HASH = hashPassword('senha123');
 
 async function main() {
   console.log('🌱 Iniciando Seed estruturado e completo no banco de dados Feirae...');
@@ -72,6 +74,7 @@ async function main() {
       phone: '(87) 99801-8279',
       whatsappPhone: '(87) 99801-8279',
       role: 'CLIENT',
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   });
 
@@ -83,6 +86,7 @@ async function main() {
       phone: '(87) 99801-8279',
       whatsappPhone: '(87) 99801-8279',
       role: 'VENDOR',
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   });
 
@@ -94,6 +98,7 @@ async function main() {
       phone: '(87) 99801-8279',
       whatsappPhone: '(87) 99801-8279',
       role: 'VENDOR',
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   });
 
@@ -105,6 +110,7 @@ async function main() {
       phone: '(87) 99801-8279',
       whatsappPhone: '(87) 99801-8279',
       role: 'VENDOR',
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   });
 
@@ -116,6 +122,7 @@ async function main() {
       phone: '(87) 99801-8279',
       whatsappPhone: '(87) 99801-8279',
       role: 'ADMIN',
+      passwordHash: DEMO_PASSWORD_HASH,
     },
   });
 
