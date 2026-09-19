@@ -51,7 +51,10 @@ import {
   Power,
   X,
   Percent,
-  Tag
+  Tag,
+  ArrowRightLeft,
+  Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
@@ -69,7 +72,7 @@ function formatDateOnly(dateStr: string) {
 
 export default function AdminDashboardPage() {
   const { currentUser } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION' | 'COUPONS'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'COMMISSIONS' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION' | 'COUPONS'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [customStartDate, setCustomStartDate] = useState(() => new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0]);
   const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -97,6 +100,10 @@ export default function AdminDashboardPage() {
   });
   const [savingCoupon, setSavingCoupon] = useState(false);
 
+  // Commissions & Orders State
+  const [orderSearch, setOrderSearch] = useState('');
+  const [orderVendorTypeFilter, setOrderVendorTypeFilter] = useState<'ALL' | 'SUBSCRIBER' | 'STANDARD'>('ALL');
+
   // Simulator State (US26)
   const [simulatedGMV, setSimulatedGMV] = useState<number>(30000);
   const [simulatedCommissionRate, setSimulatedCommissionRate] = useState<number>(0);
@@ -117,6 +124,7 @@ export default function AdminDashboardPage() {
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -254,6 +262,40 @@ export default function AdminDashboardPage() {
         setTimeout(() => setActionFeedback(null), 3000);
         // Reload stats
         const statsRes = await fetch(buildStatsUrl(period));
+        if (statsRes.ok) setStats(await statsRes.json());
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleToggleSubscriberVendor = async (vendorId: string, currentSubscriber: boolean) => {
+    const nextSubscriber = !currentSubscriber;
+    try {
+      const res = await fetch(`/api/vendors/${vendorId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          isSubscriber: nextSubscriber,
+          plan: nextSubscriber ? 'PRO' : 'FREE',
+          commissionRate: nextSubscriber ? 0 : 0.10,
+        }),
+      });
+      if (res.ok) {
+        setVendors(prev => prev.map(v => v.id === vendorId ? { 
+          ...v, 
+          isSubscriber: nextSubscriber,
+          plan: nextSubscriber ? 'PRO' : 'FREE',
+          commissionRate: nextSubscriber ? 0 : 0.10,
+        } : v));
+        setActionFeedback(
+          nextSubscriber 
+            ? 'Plano alterado para Assinante Pro (Isento de comissão por pedido).'
+            : 'Plano alterado para Vendedor Padrão (Taxa de 10% de comissão simulada).'
+        );
+        setTimeout(() => setActionFeedback(null), 4000);
+        // Reload stats and all data
+        const statsRes = await fetch(`/api/admin/stats?period=${period}`);
         if (statsRes.ok) setStats(await statsRes.json());
       }
     } catch (err) {
@@ -495,6 +537,234 @@ export default function AdminDashboardPage() {
     } finally {
       setSavingCoupon(false);
     }
+  };
+
+  // ================= RELATÓRIOS & DOWNLOAD (CSV) =================
+  const handleExportOrdersCSV = () => {
+    const ordersList = stats?.recentOrders || [];
+    if (!ordersList.length) {
+      alert('Não há pedidos disponíveis para exportação no momento.');
+      return;
+    }
+
+    const headers = [
+      'Codigo do Pedido',
+      'Data e Hora',
+      'Cliente',
+      'Email Cliente',
+      'Telefone Cliente',
+      'Barraca / Feirante',
+      'Modelo do Feirante',
+      'Itens',
+      'Forma de Pagamento',
+      'Status do Pedido',
+      'Valor do Pedido (R$)',
+      'Taxa Plataforma (%)',
+      'Comissao Feirae (R$)',
+      'Repasse Liquido Feirante (R$)'
+    ];
+
+    const rows = ordersList.map((o: any) => {
+      const dateFormatted = new Date(o.createdAt).toLocaleString('pt-BR');
+      const planLabel = o.isSubscriber ? 'Assinante Pro (Isento)' : 'Vendedor Padrão';
+      const rateLabel = o.isSubscriber ? '0%' : `${((o.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const methodLabel = o.paymentMethod === 'RETIRADA'
+        ? 'No Ato (Dinheiro/Pix Barraca)'
+        : o.paymentMethod === 'MERCADO_PAGO_PIX'
+          ? 'App (Mercado Pago Pix)'
+          : o.paymentMethod || 'Outro';
+
+      return [
+        `"${o.orderNumber}"`,
+        `"${dateFormatted}"`,
+        `"${(o.clientName || 'Cliente').replace(/"/g, '""')}"`,
+        `"${o.clientEmail || '-'}"`,
+        `"${o.clientPhone || '-'}"`,
+        `"${(o.vendorName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${planLabel}"`,
+        o.itemsCount || 1,
+        `"${methodLabel}"`,
+        `"${o.status}"`,
+        (o.totalAmount || 0).toFixed(2).replace('.', ','),
+        `"${rateLabel}"`,
+        (o.commissionAmount || 0).toFixed(2).replace('.', ','),
+        (o.netAmount || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrdersAmount = ordersList.reduce((sum: number, o: any) => sum + (o.totalAmount || 0), 0);
+    const totalCommissions = ordersList.reduce((sum: number, o: any) => sum + (o.commissionAmount || 0), 0);
+    const totalNet = ordersList.reduce((sum: number, o: any) => sum + (o.netAmount || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"Emitido em ${new Date().toLocaleString('pt-BR')}"`,
+      `"${ordersList.length} pedidos"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrdersAmount.toFixed(2).replace('.', ','),
+      '""',
+      totalCommissions.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-pedidos-comissoes-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportVendorsCSV = () => {
+    if (!vendors.length) {
+      alert('Não há feirantes cadastrados para exportação.');
+      return;
+    }
+
+    const commList = stats?.commissionsByVendor || [];
+    const commMap = new Map<string, any>();
+    commList.forEach((c: any) => commMap.set(c.vendorId, c));
+
+    const headers = [
+      'Barraca / Feirante',
+      'Responsavel',
+      'Email',
+      'Telefone',
+      'Categoria',
+      'Localizacao na Feira',
+      'Ponto / Numero',
+      'Modelo de Cobranca',
+      'Taxa de Comissao (%)',
+      'Status na Vitrine',
+      'Destaque Patrocinado',
+      'Total de Pedidos',
+      'Volume Bruto GMV (R$)',
+      'Comissao Gerada (R$)',
+      'Repasse Liquido (R$)'
+    ];
+
+    const rows = vendors.map(v => {
+      const cv = commMap.get(v.id) || {
+        ordersCount: 0,
+        totalGMV: 0,
+        totalCommission: 0,
+        totalNet: 0,
+        commissionRate: v.isSubscriber ? 0 : (v.commissionRate ?? 0.10)
+      };
+
+      const isSub = v.isSubscriber || v.plan === 'PRO';
+      const rateLabel = isSub ? '0%' : `${((cv.commissionRate ?? 0.10) * 100).toFixed(0)}%`;
+      const activeLabel = v.active ? 'Aprovada & Ativa' : 'Aguardando Aprovação';
+      const featuredLabel = v.isFeatured ? 'Sim (Patrocinada)' : 'Não';
+
+      return [
+        `"${(v.businessName || 'Barraca').replace(/"/g, '""')}"`,
+        `"${(v.user?.name || '-').replace(/"/g, '""')}"`,
+        `"${v.user?.email || '-'}"`,
+        `"${v.user?.phone || v.whatsappPhone || '-'}"`,
+        `"${(v.category || '-').replace(/"/g, '""')}"`,
+        `"${(v.fairLocation || '-').replace(/"/g, '""')}"`,
+        `"${v.boothNumber || '-'}"`,
+        `"${isSub ? 'Assinante Pro (Isento)' : 'Vendedor Padrão'}"`,
+        `"${rateLabel}"`,
+        `"${activeLabel}"`,
+        `"${featuredLabel}"`,
+        cv.ordersCount || 0,
+        (cv.totalGMV || 0).toFixed(2).replace('.', ','),
+        (cv.totalCommission || 0).toFixed(2).replace('.', ','),
+        (cv.totalNet || 0).toFixed(2).replace('.', ',')
+      ].join(';');
+    });
+
+    const totalOrders = commList.reduce((sum: number, v: any) => sum + (v.ordersCount || 0), 0);
+    const totalGMV = commList.reduce((sum: number, v: any) => sum + (v.totalGMV || 0), 0);
+    const totalCommission = commList.reduce((sum: number, v: any) => sum + (v.totalCommission || 0), 0);
+    const totalNet = commList.reduce((sum: number, v: any) => sum + (v.totalNet || 0), 0);
+
+    const summaryRow = [
+      '"TOTAL CONSOLIDADO"',
+      `"${vendors.length} feirantes cadastrados"`,
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      '""',
+      totalOrders,
+      totalGMV.toFixed(2).replace('.', ','),
+      totalCommission.toFixed(2).replace('.', ','),
+      totalNet.toFixed(2).replace('.', ',')
+    ].join(';');
+
+    const csvContent = '\uFEFF' + [headers.join(';'), ...rows, '', summaryRow].join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-feirantes-consolidado-feirae-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
+  };
+
+  const handleExportExecutiveSummaryCSV = () => {
+    if (!stats) {
+      alert('Dados estatísticos ainda não carregados.');
+      return;
+    }
+
+    const dateFormatted = new Date().toLocaleString('pt-BR');
+    const periodLabel = period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Geral (Acumulado)';
+
+    const rows = [
+      ['"RELATORIO EXECUTIVO & FINANCEIRO - FEIRAE"'],
+      [`"Data de Emissao";"${dateFormatted}"`],
+      [`"Periodo de Referencia";"${periodLabel}"`],
+      [''],
+      ['"INDICADOR";"VALOR"'],
+      [`"Feirantes Ativos na Vitrine";"${stats.activeVendors || 0}"`],
+      [`"Feirantes Assinantes Pro";"${stats.subscribersCount || 0}"`],
+      [`"Barracas em Destaque Patrocinado";"${stats.featuredVendorsCount || 0}"`],
+      [`"Total de Pedidos Realizados";"${stats.totalOrders || 0}"`],
+      [`"Volume Bruto Transacionado (GMV)";"R$ ${(stats.totalGMV || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Comissoes Simuladas de Pedidos";"R$ ${(stats.simulatedCommissionTotal || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita Recorrente de Assinaturas (MRR)";"R$ ${(stats.subscriptionRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Receita de Destaques Patrocinados";"R$ ${(stats.sponsorshipRevenue || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Faturamento Real Acumulado da Plataforma";"R$ ${(stats.totalMonetizationEstimate || 0).toFixed(2).replace('.', ',')}"`],
+      [`"Take Rate Efetivo da Plataforma";"${stats.totalGMV > 0 ? (((stats.totalMonetizationEstimate || 0) / stats.totalGMV) * 100).toFixed(1).replace('.', ',') + '%' : '0%'}"`],
+      [`"Ticket Medio por Pedido";"${stats.totalOrders > 0 ? ((stats.totalGMV || 0) / stats.totalOrders).toFixed(2).replace('.', ',') : '0,00'}"`],
+    ];
+
+    const csvContent = '\uFEFF' + rows.map(r => r.join(';')).join('\r\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    const dateStr = new Date().toISOString().split('T')[0];
+    link.setAttribute('download', `relatorio-executivo-financeiro-feirae-${period}-${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    setIsExportMenuOpen(false);
   };
 
   if (!isAdmin) {
@@ -1079,6 +1349,410 @@ export default function AdminDashboardPage() {
     );
   };
 
+  const renderCommissionsTab = () => {
+    const rawOrders: any[] = stats?.recentOrders || [];
+    const commissionsByVendor: any[] = stats?.commissionsByVendor || [];
+
+    const filteredOrders = rawOrders.filter(o => {
+      const matchesSearch = 
+        !orderSearch ||
+        o.orderNumber?.toLowerCase().includes(orderSearch.toLowerCase()) ||
+        o.clientName?.toLowerCase().includes(orderSearch.toLowerCase()) ||
+        o.vendorName?.toLowerCase().includes(orderSearch.toLowerCase());
+
+      const matchesVendorType =
+        orderVendorTypeFilter === 'ALL' ||
+        (orderVendorTypeFilter === 'SUBSCRIBER' && o.isSubscriber) ||
+        (orderVendorTypeFilter === 'STANDARD' && !o.isSubscriber);
+
+      return matchesSearch && matchesVendorType;
+    });
+
+    const totalOrdersCount = filteredOrders.length;
+    const totalOrdersGMV = filteredOrders.reduce((acc, o) => acc + (o.totalAmount || 0), 0);
+    const totalOrdersCommission = filteredOrders.reduce((acc, o) => acc + (o.commissionAmount || 0), 0);
+    const totalOrdersNet = filteredOrders.reduce((acc, o) => acc + (o.netAmount || 0), 0);
+
+    return (
+      <div className="space-y-8 animate-in fade-in">
+        {/* Banner de Comissões */}
+        <div className="bg-gradient-to-r from-emerald-950 via-teal-900 to-stone-900 text-white rounded-3xl p-6 sm:p-8 shadow-sm relative overflow-hidden">
+          <div className="absolute right-0 top-0 translate-x-8 -translate-y-8 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-2">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-emerald-200 text-xs font-bold backdrop-blur-xs">
+                <Coins className="w-3.5 h-3.5 text-emerald-300" />
+                Auditoria de Monetização
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black tracking-tight">
+                Comissão Simulada por Pedido & Mensalidade de Vendedores
+              </h2>
+              <p className="text-xs sm:text-sm text-emerald-100/80 max-w-2xl leading-relaxed">
+                Acompanhe o cálculo de comissões demonstrativas geradas por cada pedido para validar hipóteses de monetização.
+                Vendedores <strong>Assinantes Pro</strong> são isentos (taxa 0%), enquanto <strong>Vendedores Padrão</strong> possuem comissão calculada (10%).
+              </p>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-white/10 border border-white/15 backdrop-blur-sm shrink-0 self-start md:self-auto text-xs space-y-1">
+              <div className="text-emerald-200 font-bold flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+                <span>Valores 100% Demonstrativos</span>
+              </div>
+              <p className="text-stone-300 text-[11px]">Sem cobrança financeira real no momento.</p>
+            </div>
+          </div>
+        </div>
+
+        {/* KPI Cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume (GMV)</span>
+              <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats?.totalGMV || 0)}</span>
+              <span className="text-[11px] text-stone-500 font-semibold mt-0.5 block">{stats?.totalOrders || 0} pedidos confirmados</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+              <TrendingUp className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-emerald-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-emerald-50/40 to-white">
+            <div>
+              <span className="text-xs font-semibold text-emerald-900 block uppercase tracking-wider">Comissões Simuladas</span>
+              <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats?.simulatedCommissionTotal || 0)}</span>
+              <span className="text-[11px] text-emerald-700 font-semibold mt-0.5 block">Total acumulado nos pedidos</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+              <Coins className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-purple-200 shadow-xs flex items-center justify-between">
+            <div>
+              <span className="text-xs font-semibold text-purple-900 block uppercase tracking-wider">Assinaturas MRR</span>
+              <span className="text-2xl font-black text-purple-700 mt-1 block">{formatCurrency((stats?.subscribersCount || 0) * 49.9)}</span>
+              <span className="text-[11px] text-purple-600 font-semibold mt-0.5 block">{stats?.subscribersCount || 0} feirante(s) isento(s)</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+              <Layers className="w-5 h-5" />
+            </div>
+          </div>
+
+          <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between bg-stone-50/60">
+            <div>
+              <span className="text-xs font-semibold text-stone-600 block uppercase tracking-wider">Faturamento Real Acumulado</span>
+              <span className="text-2xl font-black text-stone-900 mt-1 block">{formatCurrency(stats?.totalMonetizationEstimate || 0)}</span>
+              <span className="text-[11px] text-stone-500 font-semibold mt-0.5 block">Assinaturas + Patrocínios + Comissões</span>
+            </div>
+            <div className="w-11 h-11 rounded-2xl bg-stone-200 text-stone-800 flex items-center justify-center shrink-0">
+              <DollarSign className="w-5 h-5" />
+            </div>
+          </div>
+        </div>
+
+        {/* Seção 1: Painel de Comissões por Feirante / Vendedor */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div>
+              <h3 className="font-extrabold text-stone-900 text-base flex items-center gap-2">
+                <Store className="w-4 h-4 text-feira-600" />
+                Painel Consolidado de Comissões por Vendedor
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Exibe o total acumulado de vendas brutas, comissões simuladas e repasse líquido para cada barraca.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar planilha consolidada de feirantes em CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
+              <span className="px-3 py-1 rounded-full bg-stone-100 text-stone-600 text-xs font-bold w-fit">
+                {commissionsByVendor.length} barraca(s) cadastradas
+              </span>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold uppercase text-[10px]">
+                <tr>
+                  <th className="p-3.5">Barraca / Feirante</th>
+                  <th className="p-3.5">Modelo / Tipo</th>
+                  <th className="p-3.5 text-center">Taxa de Comissão</th>
+                  <th className="p-3.5 text-center">Pedidos</th>
+                  <th className="p-3.5 text-right">Volume Bruto (GMV)</th>
+                  <th className="p-3.5 text-right">Comissão Simulada</th>
+                  <th className="p-3.5 text-right">Repasse Líquido</th>
+                  <th className="p-3.5 text-right">Ação / Modelo</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {commissionsByVendor.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-6 text-center text-stone-400">
+                      Nenhum feirante com dados disponíveis.
+                    </td>
+                  </tr>
+                ) : (
+                  commissionsByVendor.map(cv => (
+                    <tr key={cv.vendorId} className="hover:bg-stone-50/60 transition">
+                      <td className="p-3.5 font-bold text-stone-900">
+                        {cv.vendorName}
+                      </td>
+                      <td className="p-3.5">
+                        {cv.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Check className="w-3 h-3 text-emerald-600" />
+                            Assinante Pro (Isento)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            Vendedor Padrão (10%)
+                          </span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center font-mono font-semibold">
+                        {cv.isSubscriber ? (
+                          <span className="text-emerald-700 font-extrabold">0% (Isento)</span>
+                        ) : (
+                          <span className="text-stone-800 font-bold">{(cv.commissionRate * 100).toFixed(0)}%</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-center font-medium text-stone-600">
+                        {cv.ordersCount}
+                      </td>
+                      <td className="p-3.5 text-right font-bold text-stone-900">
+                        {formatCurrency(cv.totalGMV)}
+                      </td>
+                      <td className="p-3.5 text-right font-bold">
+                        {cv.isSubscriber ? (
+                          <span className="text-emerald-700 font-extrabold">R$ 0,00 (Isento)</span>
+                        ) : (
+                          <span className="text-amber-700 font-extrabold">{formatCurrency(cv.totalCommission)}</span>
+                        )}
+                      </td>
+                      <td className="p-3.5 text-right font-bold text-stone-700">
+                        {formatCurrency(cv.totalNet)}
+                      </td>
+                      <td className="p-3.5 text-right">
+                        <button
+                          onClick={() => handleToggleSubscriberVendor(cv.vendorId, cv.isSubscriber)}
+                          className={`px-2.5 py-1.5 rounded-xl text-[11px] font-bold border transition cursor-pointer inline-flex items-center gap-1.5 shadow-2xs ${
+                            cv.isSubscriber
+                              ? 'border-stone-200 text-stone-700 hover:bg-stone-100'
+                              : 'border-emerald-300 bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+                          }`}
+                          title={cv.isSubscriber ? 'Mudar para Vendedor Padrão (Taxa 10%)' : 'Mudar para Assinante Pro (Isento de Comissão)'}
+                        >
+                          <ArrowRightLeft className="w-3 h-3 text-stone-500" />
+                          <span>{cv.isSubscriber ? 'Mudar para Padrão (10%)' : 'Mudar para Assinante (Isento)'}</span>
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        {/* Seção 2: Tabela Detalhada de Cada Pedido com Comissão */}
+        <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-stone-100 pb-4">
+            <div>
+              <h3 className="font-extrabold text-stone-900 text-base flex items-center gap-2">
+                <FileText className="w-4 h-4 text-feira-600" />
+                Auditoria Detalhada de Pedidos & Comissões
+              </h3>
+              <p className="text-xs text-stone-500 mt-0.5">
+                Visualize a comissão simulada calculada individualmente para cada pré-pedido confirmado na plataforma.
+              </p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Filter by vendor type */}
+              <div className="flex bg-stone-100 p-1 rounded-xl text-xs">
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'ALL' ? 'bg-white text-stone-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Todos
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('SUBSCRIBER')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'SUBSCRIBER' ? 'bg-white text-emerald-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Assinantes (Isentos)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOrderVendorTypeFilter('STANDARD')}
+                  className={`px-3 py-1.5 rounded-lg transition font-medium cursor-pointer ${
+                    orderVendorTypeFilter === 'STANDARD' ? 'bg-white text-blue-900 shadow-2xs font-bold' : 'text-stone-500'
+                  }`}
+                >
+                  Padrão (Comissão %)
+                </button>
+              </div>
+
+              {/* Search input */}
+              <div className="relative">
+                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2 text-stone-400" />
+                <input
+                  type="text"
+                  placeholder="Buscar pedido, cliente ou barraca..."
+                  value={orderSearch}
+                  onChange={e => setOrderSearch(e.target.value)}
+                  className="pl-8 pr-3.5 py-1.5 bg-stone-50 border border-stone-200 rounded-xl text-xs focus:bg-white focus:ring-2 focus:ring-feira-500 focus:outline-none w-64"
+                />
+              </div>
+
+              {/* Export Orders Button */}
+              <button
+                onClick={handleExportOrdersCSV}
+                className="px-3 py-1.5 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs shrink-0"
+                title="Exportar todos os pedidos e comissões em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar Pedidos (CSV)</span>
+              </button>
+            </div>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-stone-50 border-b border-stone-200 text-stone-500 font-semibold uppercase text-[10px]">
+                <tr>
+                  <th className="p-3.5">Pedido / Data</th>
+                  <th className="p-3.5">Cliente</th>
+                  <th className="p-3.5">Barraca / Feirante</th>
+                  <th className="p-3.5">Tipo do Feirante</th>
+                  <th className="p-3.5 text-right">Valor do Pedido</th>
+                  <th className="p-3.5 text-center">Taxa</th>
+                  <th className="p-3.5 text-right">Comissão Simulada</th>
+                  <th className="p-3.5 text-right">Líquido do Feirante</th>
+                  <th className="p-3.5 text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-stone-100">
+                {filteredOrders.length === 0 ? (
+                  <tr>
+                    <td colSpan={9} className="p-8 text-center text-stone-400">
+                      Nenhum pedido encontrado para os filtros selecionados.
+                    </td>
+                  </tr>
+                ) : (
+                  filteredOrders.map(o => (
+                    <tr key={o.id} className="hover:bg-stone-50/60 transition">
+                      <td className="p-3.5">
+                        <div className="font-bold text-stone-900 font-mono">{o.orderNumber}</div>
+                        <div className="text-[10px] text-stone-400">
+                          {new Date(o.createdAt).toLocaleDateString('pt-BR')} {new Date(o.createdAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </td>
+
+                      <td className="p-3.5">
+                        <div className="font-bold text-stone-900">{o.clientName}</div>
+                        {o.clientPhone && <div className="text-[10px] text-stone-400">{o.clientPhone}</div>}
+                      </td>
+
+                      <td className="p-3.5 font-medium text-stone-800">
+                        {o.vendorName}
+                      </td>
+
+                      <td className="p-3.5">
+                        {o.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <Check className="w-3 h-3 text-emerald-600" /> Assinante (Isento)
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+                            Vendedor Padrão
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold text-stone-900">
+                        {formatCurrency(o.totalAmount)}
+                      </td>
+
+                      <td className="p-3.5 text-center font-mono text-[11px]">
+                        {o.isSubscriber ? (
+                          <span className="text-emerald-700 font-bold">0%</span>
+                        ) : (
+                          <span className="text-stone-700 font-semibold">{(o.commissionRate * 100).toFixed(0)}%</span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold">
+                        {o.isSubscriber ? (
+                          <span className="inline-flex items-center gap-1 text-emerald-700 font-extrabold">
+                            R$ 0,00 <span className="text-[10px] font-normal text-emerald-600">(Isento)</span>
+                          </span>
+                        ) : (
+                          <span className="text-amber-800 font-black">
+                            {formatCurrency(o.commissionAmount)}
+                          </span>
+                        )}
+                      </td>
+
+                      <td className="p-3.5 text-right font-bold text-emerald-800">
+                        {formatCurrency(o.netAmount)}
+                      </td>
+
+                      <td className="p-3.5 text-center">
+                        <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          o.status === 'RETIRADO'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : o.status === 'CANCELADO'
+                            ? 'bg-red-100 text-red-800'
+                            : 'bg-amber-100 text-amber-800'
+                        }`}>
+                          {o.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+              {filteredOrders.length > 0 && (
+                <tfoot className="bg-stone-100/90 font-extrabold text-stone-900 border-t-2 border-stone-200">
+                  <tr>
+                    <td colSpan={4} className="p-3.5 text-right uppercase tracking-wider text-[11px] text-stone-600">
+                      Total ({totalOrdersCount} pedidos filtrados):
+                    </td>
+                    <td className="p-3.5 text-right font-black text-stone-900">
+                      {formatCurrency(totalOrdersGMV)}
+                    </td>
+                    <td></td>
+                    <td className="p-3.5 text-right font-black text-emerald-800">
+                      {formatCurrency(totalOrdersCommission)}
+                    </td>
+                    <td className="p-3.5 text-right font-black text-stone-900">
+                      {formatCurrency(totalOrdersNet)}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
+            </table>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const renderMonetizationSimulator = () => {
     // Instant calculations (US26)
     const commissionRevenue = (simulatedGMV * simulatedCommissionRate) / 100;
@@ -1442,13 +2116,25 @@ export default function AdminDashboardPage() {
                   {formatCurrency(realRevenue)}
                 </span>
                 <span className="text-xs text-stone-500 font-semibold block mt-0.5">
-                  Receita real gerada (Assinaturas + Patrocínios)
+                  Receita real acumulada (Assinaturas + Patrocínios + Comissões)
                 </span>
               </div>
               <div className="space-y-1.5 pt-2 border-t border-stone-200/80 text-xs text-stone-700">
                 <div className="flex justify-between">
                   <span>GMV Real Movimentado:</span>
                   <span className="font-bold text-stone-900">{formatCurrency(realGMV)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Comissões Simuladas:</span>
+                  <span className="font-bold text-emerald-700">{formatCurrency(stats?.simulatedCommissionTotal || 0)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Receita de Assinaturas (MRR):</span>
+                  <span className="font-bold text-purple-700">{formatCurrency((stats?.subscribersCount || 0) * 49.9)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span>Receita de Patrocínios:</span>
+                  <span className="font-bold text-amber-700">{formatCurrency(stats?.sponsorshipRevenue || 0)}</span>
                 </div>
                 <div className="flex justify-between">
                   <span>Pedidos Reais Concluídos:</span>
@@ -1632,6 +2318,63 @@ export default function AdminDashboardPage() {
             </div>
           )}
 
+          {/* Export Reports Dropdown Menu */}
+          <div className="relative">
+            {isExportMenuOpen && (
+              <div
+                className="fixed inset-0 z-40"
+                onClick={() => setIsExportMenuOpen(false)}
+              />
+            )}
+            <button
+              onClick={() => setIsExportMenuOpen(prev => !prev)}
+              className="px-3.5 py-2 rounded-2xl bg-white border border-stone-200 text-stone-800 flex items-center gap-2 text-xs font-bold shadow-xs hover:bg-stone-50 transition cursor-pointer relative z-50"
+              title="Baixar relatórios em planilha CSV compatível com Excel e Google Sheets"
+            >
+              <Download className="w-3.5 h-3.5 text-purple-600" />
+              <span>Exportar Relatórios</span>
+              <ArrowDown className={`w-3 h-3 text-stone-400 transition-transform ${isExportMenuOpen ? 'rotate-180' : ''}`} />
+            </button>
+
+            {isExportMenuOpen && (
+              <div className="absolute right-0 mt-2 w-72 bg-white rounded-2xl border border-stone-200 shadow-xl p-2 z-50 animate-in fade-in zoom-in-95 space-y-1 text-xs">
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+                  Planilhas CSV (Excel / Sheets)
+                </div>
+                <button
+                  onClick={handleExportOrdersCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Pedidos & Comissões (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Auditoria detalhada com valores e taxas</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportVendorsCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <Store className="w-4 h-4 text-blue-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Consolidado de Feirantes (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Cadastro, GMV e repasses por barraca</div>
+                  </div>
+                </button>
+                <button
+                  onClick={handleExportExecutiveSummaryCSV}
+                  className="w-full text-left px-3 py-2 rounded-xl hover:bg-purple-50 text-stone-700 hover:text-purple-900 font-semibold flex items-center gap-2.5 transition cursor-pointer"
+                >
+                  <BarChart3 className="w-4 h-4 text-purple-600 shrink-0" />
+                  <div>
+                    <div className="font-bold">Fechamento Executivo (CSV)</div>
+                    <div className="text-[10px] text-stone-400">Indicadores gerais, receita e Take Rate</div>
+                  </div>
+                </button>
+              </div>
+            )}
+          </div>
+
           {pendingVendorsCount > 0 && (
             <button
               onClick={() => setActiveTab('VENDORS')}
@@ -1673,6 +2416,23 @@ export default function AdminDashboardPage() {
         >
           <TrendingUp className="w-4 h-4" />
           Visão Geral & Indicadores
+        </button>
+
+        <button
+          onClick={() => setActiveTab('COMMISSIONS')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'COMMISSIONS'
+              ? 'border-emerald-600 text-emerald-900 font-bold'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Coins className="w-4 h-4 text-emerald-600" />
+          Comissões & Pedidos
+          {stats?.totalOrders > 0 && (
+            <span className="px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-extrabold">
+              {stats.totalOrders}
+            </span>
+          )}
         </button>
 
         <button
@@ -1769,63 +2529,78 @@ export default function AdminDashboardPage() {
         <div className="space-y-8 animate-in fade-in">
           
           {/* Metrics Row */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Feirantes Ativos</span>
-                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
+                <span className="text-2xl font-black text-stone-900 mt-1 block">{stats.activeVendors}</span>
                 <span className="text-[11px] text-emerald-600 font-semibold mt-1 block">Exibidos na vitrine</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
-                <Store className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0">
+                <Store className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Total Pedidos</span>
-                <span className="text-2xl sm:text-3xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
+                <span className="text-2xl font-black text-stone-900 mt-1 block">{stats.totalOrders}</span>
                 <span className="text-[11px] text-blue-600 font-semibold mt-1 block">Acumulados</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
-                <ShoppingBag className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                <ShoppingBag className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Volume (GMV)</span>
-                <span className="text-2xl sm:text-3xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">{formatCurrency(stats.totalGMV)}</span>
                 <span className="text-[11px] text-stone-500 font-semibold mt-1 block">Movimentado na feira</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
-                <TrendingUp className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center shrink-0">
+                <TrendingUp className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
+            <div className="bg-white p-4 rounded-3xl border border-emerald-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-emerald-50/40 to-white">
+              <div>
+                <span className="text-xs font-semibold text-emerald-900 block uppercase tracking-wider">Comissão Simulada</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">
+                  {formatCurrency(stats.simulatedCommissionTotal || 0)}
+                </span>
+                <span className="text-[11px] text-emerald-700 font-semibold mt-1 block">
+                  Demonstrativo
+                </span>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center shrink-0">
+                <Coins className="w-4 h-4 text-emerald-700" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-3xl border border-stone-200 shadow-xs flex items-center justify-between">
               <div>
                 <span className="text-xs font-semibold text-stone-400 block uppercase tracking-wider">Assinaturas MRR</span>
-                <span className="text-2xl sm:text-3xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
+                <span className="text-2xl font-black text-purple-700 mt-1 block">{formatCurrency(stats.subscribersCount * 49.9)}</span>
                 <span className="text-[11px] text-purple-600 font-semibold mt-1 block">R$ 49,90/mês</span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
-                <Layers className="w-5 h-5" />
+              <div className="w-10 h-10 rounded-2xl bg-purple-50 text-purple-700 flex items-center justify-center shrink-0">
+                <Layers className="w-4 h-4" />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded-3xl border border-amber-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
+            <div className="bg-white p-4 rounded-3xl border border-amber-300/80 shadow-xs flex items-center justify-between bg-gradient-to-br from-amber-50/40 to-white">
               <div>
                 <span className="text-xs font-semibold text-amber-900 block uppercase tracking-wider">Patrocínios</span>
-                <span className="text-2xl sm:text-3xl font-black text-amber-600 mt-1 block">
+                <span className="text-2xl font-black text-amber-600 mt-1 block">
                   {formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}
                 </span>
                 <span className="text-[11px] text-amber-700 font-semibold mt-1 block">
                   {stats.featuredVendorsCount || 0} barraca(s) ativas
                 </span>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
-                <Sparkles className="w-5 h-5 fill-amber-500" />
+              <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 flex items-center justify-center shrink-0">
+                <Sparkles className="w-4 h-4 fill-amber-500" />
               </div>
             </div>
           </div>
@@ -1834,7 +2609,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-3">
               <h3 className="font-extrabold text-stone-900 text-base">Faturamento & Monetização da Feira</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90) e <strong>Destaques Patrocinados</strong> (R$ 29,90/semana), mantendo 0% de comissão de intermediação para os produtores.
+                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90), <strong>Destaques Patrocinados</strong> (R$ 29,90/semana) e <strong>Comissões Simuladas</strong> de vendedores padrão (10% demonstrativo).
               </p>
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1.5">
                 <div className="flex justify-between font-semibold">
@@ -1845,15 +2620,19 @@ export default function AdminDashboardPage() {
                   <span>Receita de Destaques Patrocinados (US19):</span>
                   <span className="text-amber-700">{formatCurrency(stats.sponsorshipRevenue || (stats.featuredVendorsCount || 0) * 29.9)}</span>
                 </div>
+                <div className="flex justify-between font-semibold">
+                  <span>Comissões Simuladas de Pedidos:</span>
+                  <span className="text-emerald-700 font-bold">{formatCurrency(stats.simulatedCommissionTotal || 0)}</span>
+                </div>
                 <div className="flex justify-between font-extrabold text-stone-900 pt-1.5 border-t border-stone-200">
-                  <span>Faturamento Total Simulado da Plataforma:</span>
+                  <span>Faturamento Real Acumulado da Plataforma:</span>
                   <span className="text-emerald-700 font-black text-sm">
-                    {formatCurrency(stats.totalMonetizationEstimate || (stats.subscribersCount * 49.9 + (stats.featuredVendorsCount || 0) * 29.9))}
+                    {formatCurrency(stats.totalMonetizationEstimate)}
                   </span>
                 </div>
                 <div className="flex justify-between text-stone-500 pt-1">
-                  <span>Economia gerada para os feirantes vs marketplaces:</span>
-                  <span className="text-emerald-600 font-bold">~ {formatCurrency(stats.totalGMV * 0.15)}</span>
+                  <span>Economia gerada para feirantes assinantes vs taxas de mercado:</span>
+                  <span className="text-emerald-600 font-bold">~ {formatCurrency(stats.totalGMV * 0.10)}</span>
                 </div>
               </div>
             </div>
@@ -1907,6 +2686,13 @@ export default function AdminDashboardPage() {
           {/* Section: Monetization Simulator & GMV Projections (US26) */}
           {renderMonetizationSimulator()}
 
+        </div>
+      )}
+
+      {/* ================= TAB: COMISSÕES E PEDIDOS ================= */}
+      {activeTab === 'COMMISSIONS' && (
+        <div className="space-y-8 animate-in fade-in">
+          {renderCommissionsTab()}
         </div>
       )}
 
@@ -1967,6 +2753,16 @@ export default function AdminDashboardPage() {
                   Ativas ({vendors.filter(v => v.active === true).length})
                 </button>
               </div>
+
+              {/* Export Vendors Button */}
+              <button
+                onClick={handleExportVendorsCSV}
+                className="px-3 py-2 rounded-xl border border-stone-200 bg-stone-50 hover:bg-stone-100 text-stone-700 text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Exportar cadastro consolidado de feirantes em planilha CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-stone-500" />
+                <span>Exportar CSV</span>
+              </button>
             </div>
           </div>
 
@@ -1978,6 +2774,7 @@ export default function AdminDashboardPage() {
                   <th className="p-3.5">Categoria</th>
                   <th className="p-3.5">Localização na Feira</th>
                   <th className="p-3.5">Contato do Feirante</th>
+                  <th className="p-3.5">Plano / Comissão</th>
                   <th className="p-3.5">Status de Moderação</th>
                   <th className="p-3.5">Destaque Patrocinado</th>
                   <th className="p-3.5 text-right">Ação do Administrador</th>
@@ -1986,7 +2783,7 @@ export default function AdminDashboardPage() {
               <tbody className="divide-y divide-stone-100">
                 {filteredVendors.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="p-8 text-center text-stone-400">
+                    <td colSpan={8} className="p-8 text-center text-stone-400">
                       Nenhuma barraca encontrada com os filtros selecionados.
                     </td>
                   </tr>
@@ -2021,6 +2818,28 @@ export default function AdminDashboardPage() {
                       <td className="p-3.5 space-y-0.5 text-[11px] text-stone-500">
                         {v.user?.email && <div className="flex items-center gap-1"><Mail className="w-3 h-3 text-stone-400" /> {v.user.email}</div>}
                         {v.user?.phone && <div className="flex items-center gap-1"><Phone className="w-3 h-3 text-stone-400" /> {v.user.phone}</div>}
+                      </td>
+
+                      <td className="p-3.5">
+                        <div className="space-y-1">
+                          {v.isSubscriber ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200 flex items-center gap-1 w-fit">
+                              <ShieldCheck className="w-3 h-3 text-emerald-600" /> Assinante Pro (Isento)
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-800 border border-blue-200 flex items-center gap-1 w-fit">
+                              Padrão (10% comissão)
+                            </span>
+                          )}
+                          <button
+                            onClick={() => handleToggleSubscriberVendor(v.id, v.isSubscriber)}
+                            className="text-[10px] text-stone-500 hover:text-stone-800 underline flex items-center gap-1 cursor-pointer"
+                            title="Alternar entre Assinante Pro e Vendedor Padrão"
+                          >
+                            <ArrowRightLeft className="w-2.5 h-2.5" />
+                            {v.isSubscriber ? 'Mudar p/ Padrão' : 'Mudar p/ Assinante'}
+                          </button>
+                        </div>
                       </td>
 
                       <td className="p-3.5">

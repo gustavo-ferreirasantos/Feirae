@@ -50,20 +50,112 @@ export async function GET(request: Request) {
       }),
       prisma.order.findMany({
         where: ordersWhere,
-        select: {
-          id: true,
-          status: true,
-          totalAmount: true,
-          clientId: true,
-          clientName: true,
-          clientEmail: true,
-          createdAt: true,
+        include: {
+          vendor: {
+            select: {
+              id: true,
+              businessName: true,
+              plan: true,
+              isSubscriber: true,
+              commissionRate: true,
+            },
+          },
           items: { select: { id: true } },
         },
+        orderBy: { createdAt: 'desc' },
       }),
       prisma.vendor.count({ where: { isSubscriber: true, active: true } }).catch(() => 0),
       prisma.vendor.count({ where: { isFeatured: true, active: true } }).catch(() => 0),
     ]);
+
+    const ordersWithCommission = orders.map((o: any) => {
+      const isPro = o.vendor?.plan === 'PRO' || o.vendor?.isSubscriber || o.vendor?.commissionRate === 0;
+      // Default standard vendor commission rate is 10% (0.10) or custom vendor.commissionRate
+      const commissionRate = isPro ? 0 : (o.vendor?.commissionRate ?? 0.10);
+      const isCancelled = o.status === 'CANCELADO';
+      const commissionAmount = isCancelled ? 0 : Number(((o.totalAmount || 0) * commissionRate).toFixed(2));
+      const netAmount = Number(((o.totalAmount || 0) - commissionAmount).toFixed(2));
+
+      return {
+        id: o.id,
+        orderNumber: o.orderNumber,
+        createdAt: o.createdAt.toISOString ? o.createdAt.toISOString() : String(o.createdAt),
+        clientName: o.clientName,
+        clientEmail: o.clientEmail,
+        clientPhone: o.clientPhone,
+        vendorId: o.vendorId,
+        vendorName: o.vendor?.businessName || 'Barraca',
+        vendorPlan: isPro ? 'PRO' : 'FREE',
+        isSubscriber: isPro,
+        commissionRate,
+        commissionAmount,
+        netAmount,
+        totalAmount: o.totalAmount,
+        status: o.status,
+        paymentMethod: o.paymentMethod,
+        itemsCount: o.items?.length || 0,
+      };
+    });
+
+    const totalSimulatedCommissions = Number(
+      ordersWithCommission
+        .filter((o: any) => o.status !== 'CANCELADO')
+        .reduce((sum: number, o: any) => sum + o.commissionAmount, 0)
+        .toFixed(2)
+    );
+
+    const commissionsByVendorMap = new Map<string, {
+      vendorId: string;
+      vendorName: string;
+      plan: string;
+      isSubscriber: boolean;
+      commissionRate: number;
+      ordersCount: number;
+      totalGMV: number;
+      totalCommission: number;
+      totalNet: number;
+    }>();
+
+    vendors.forEach((v: any) => {
+      const isPro = v.plan === 'PRO' || v.isSubscriber || v.commissionRate === 0;
+      const rate = isPro ? 0 : (v.commissionRate ?? 0.10);
+      commissionsByVendorMap.set(v.id, {
+        vendorId: v.id,
+        vendorName: v.businessName,
+        plan: isPro ? 'PRO' : 'FREE',
+        isSubscriber: isPro,
+        commissionRate: rate,
+        ordersCount: 0,
+        totalGMV: 0,
+        totalCommission: 0,
+        totalNet: 0,
+      });
+    });
+
+    ordersWithCommission.forEach((o: any) => {
+      if (o.status === 'CANCELADO') return;
+      let record = commissionsByVendorMap.get(o.vendorId);
+      if (!record) {
+        record = {
+          vendorId: o.vendorId,
+          vendorName: o.vendorName,
+          plan: o.vendorPlan,
+          isSubscriber: o.isSubscriber,
+          commissionRate: o.commissionRate,
+          ordersCount: 0,
+          totalGMV: 0,
+          totalCommission: 0,
+          totalNet: 0,
+        };
+        commissionsByVendorMap.set(o.vendorId, record);
+      }
+      record.ordersCount += 1;
+      record.totalGMV = Number((record.totalGMV + o.totalAmount).toFixed(2));
+      record.totalCommission = Number((record.totalCommission + o.commissionAmount).toFixed(2));
+      record.totalNet = Number((record.totalNet + o.netAmount).toFixed(2));
+    });
+
+    const commissionsByVendor = Array.from(commissionsByVendorMap.values());
 
     const ordersByStatus = {
       novo: orders.filter((o: any) => o.status === 'NOVO').length,
@@ -79,6 +171,9 @@ export async function GET(request: Request) {
 
     const sponsorshipRevenue = featuredCount * 29.90;
     const subscriptionRevenue = subscribersCount * 49.90;
+    const totalMonetizationEstimate = Number(
+      (subscriptionRevenue + sponsorshipRevenue + totalSimulatedCommissions).toFixed(2)
+    );
 
     // 1. Vendor Activation Metrics
     const vendorsBreakdown = vendors.map((v: any) => ({
@@ -200,8 +295,12 @@ export async function GET(request: Request) {
       subscribersCount,
       featuredVendorsCount: featuredCount,
       sponsorshipRevenue,
-      totalMonetizationEstimate: Math.round((subscriptionRevenue + sponsorshipRevenue) * 100) / 100,
+      subscriptionRevenue,
+      simulatedCommissionTotal: totalSimulatedCommissions,
+      totalMonetizationEstimate,
       ordersByStatus,
+      commissionsByVendor,
+      recentOrders: ordersWithCommission,
       productAnalytics: {
         period,
         funnel: {

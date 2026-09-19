@@ -397,6 +397,14 @@ export default function CartCheckoutPage() {
                           <span>Subtotal: {formatCurrency(subtotal)}</span>
                         )}
                       </div>
+
+                      {/* Stock limit warning message */}
+                      {item.quantity >= item.product.stock && (
+                        <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-xs font-semibold animate-in fade-in">
+                          <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                          <span>Limite em estoque atingido ({isWeighable ? formatWeight(item.product.stock) : `${item.product.stock} ${item.product.unit}`} disponíveis)</span>
+                        </div>
+                      )}
                     </div>
                   </div>
 
@@ -431,7 +439,7 @@ export default function CartCheckoutPage() {
                             }}
                             disabled={item.quantity >= item.product.stock}
                             className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-amber-100 transition disabled:opacity-30 cursor-pointer"
-                            title="Aumentar 100g"
+                            title={item.quantity >= item.product.stock ? 'Limite em estoque atingido' : 'Aumentar 100g'}
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
@@ -453,6 +461,7 @@ export default function CartCheckoutPage() {
                             onClick={() => updateQuantity(item.product.id, item.quantity + 1)}
                             disabled={item.quantity >= item.product.stock}
                             className="p-1 text-stone-600 hover:text-stone-900 rounded-lg hover:bg-stone-200 transition disabled:opacity-30 cursor-pointer"
+                            title={item.quantity >= item.product.stock ? 'Limite em estoque atingido' : 'Aumentar 1 unidade'}
                           >
                             <Plus className="w-3.5 h-3.5" />
                           </button>
