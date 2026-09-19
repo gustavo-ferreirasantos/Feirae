@@ -24,7 +24,15 @@ export async function GET(
       },
       include: {
         items: true,
-        vendor: { select: { id: true, businessName: true, fairLocation: true, whatsappPhone: true } },
+        vendor: { 
+          select: { 
+            id: true, 
+            businessName: true, 
+            fairLocation: true, 
+            whatsappPhone: true,
+            user: { select: { phone: true, whatsappPhone: true } }
+          } 
+        },
         client: { select: { id: true, name: true, phone: true, email: true } },
         review: true,
       },
@@ -34,9 +42,18 @@ export async function GET(
       return NextResponse.json({ error: 'Pedido não encontrado no banco de dados.' }, { status: 404 });
     }
 
+    const vendorPhone = dbOrder.vendor?.whatsappPhone || dbOrder.vendor?.user?.whatsappPhone || dbOrder.vendor?.user?.phone || undefined;
+
     return NextResponse.json({
       ...dbOrder,
       vendorName: dbOrder.vendor?.businessName,
+      vendorPhone,
+      vendor: dbOrder.vendor ? {
+        id: dbOrder.vendor.id,
+        businessName: dbOrder.vendor.businessName,
+        fairLocation: dbOrder.vendor.fairLocation,
+        whatsappPhone: vendorPhone,
+      } : undefined,
       createdAt: dbOrder.createdAt.toISOString ? dbOrder.createdAt.toISOString() : String(dbOrder.createdAt),
       review: dbOrder.review
         ? {
@@ -170,15 +187,32 @@ export async function PATCH(
       where: { id: existingOrder.id },
       include: {
         items: true,
-        vendor: { select: { id: true, businessName: true, fairLocation: true, whatsappPhone: true } },
+        vendor: { 
+          select: { 
+            id: true, 
+            businessName: true, 
+            fairLocation: true, 
+            whatsappPhone: true,
+            user: { select: { phone: true, whatsappPhone: true } }
+          } 
+        },
         client: { select: { id: true, name: true, phone: true, email: true } },
         review: true,
       },
     });
 
+    const vendorPhone = freshOrder?.vendor?.whatsappPhone || freshOrder?.vendor?.user?.whatsappPhone || freshOrder?.vendor?.user?.phone || undefined;
+
     return NextResponse.json({
       ...freshOrder,
       vendorName: freshOrder?.vendor?.businessName,
+      vendorPhone,
+      vendor: freshOrder?.vendor ? {
+        id: freshOrder.vendor.id,
+        businessName: freshOrder.vendor.businessName,
+        fairLocation: freshOrder.vendor.fairLocation,
+        whatsappPhone: vendorPhone,
+      } : undefined,
       createdAt: freshOrder?.createdAt.toISOString ? freshOrder.createdAt.toISOString() : String(freshOrder?.createdAt),
       review: freshOrder?.review
         ? {

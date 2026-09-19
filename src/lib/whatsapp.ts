@@ -32,11 +32,39 @@ export function getVendorContactLink(vendorPhone: string, vendorName: string, it
 }
 
 /**
- * Generate WhatsApp link for sending the pickup pass details directly to the vendor.
+ * Generate WhatsApp link for contacting a vendor regarding a specific order.
+ * Uses the vendor's registered WhatsApp phone number and includes order number and items.
+ * Returns null if the vendor does not have a registered WhatsApp phone.
  */
-export function getPickupPassWhatsAppLink(order: Order, vendorPhone?: string): string {
-  const targetPhone = vendorPhone || order.clientPhone || '87998018279';
-  const itemsText = order.items
+export function getOrderWhatsAppContactLink(order: Order, vendorPhoneOverride?: string): string | null {
+  const targetPhone = vendorPhoneOverride || order.vendorPhone || order.vendor?.whatsappPhone;
+  if (!targetPhone || !formatWhatsAppPhone(targetPhone)) {
+    return null;
+  }
+
+  const itemsText = order.items && order.items.length > 0
+    ? order.items.map(i => `• ${i.quantity}x ${i.productName}`).join('\n')
+    : 'Nenhum item listado';
+
+  const message = `Olá! Gostaria de falar sobre o meu pedido *#${order.orderNumber}* na barraca *${order.vendorName || 'Feirae'}*.\n\n` +
+    `📋 *Itens do Pedido:*\n${itemsText}\n\n` +
+    `💰 *Valor Total:* ${formatCurrency(order.totalAmount)}\n` +
+    `📍 *Retirada:* ${order.pickupDate || 'Na feira'} (${order.pickupLocation || 'Local da feira'})`;
+
+  return getWhatsAppLink(targetPhone, message);
+}
+
+/**
+ * Generate WhatsApp link for sending the pickup pass details directly to the vendor.
+ * Returns null if the vendor does not have a registered WhatsApp phone.
+ */
+export function getPickupPassWhatsAppLink(order: Order, vendorPhone?: string): string | null {
+  const targetPhone = vendorPhone || order.vendorPhone || order.vendor?.whatsappPhone;
+  if (!targetPhone || !formatWhatsAppPhone(targetPhone)) {
+    return null;
+  }
+
+  const itemsText = order.items && order.items.length > 0
     ? order.items.map(i => `• ${i.quantity}x ${i.productName}`).join('\n')
     : '';
 

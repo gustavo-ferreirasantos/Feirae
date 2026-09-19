@@ -38,3 +38,7 @@ export function formatWeight(weightInKg: number): string {
   });
   return `${formatted}kg`;
 }
+
+export const DEFAULT_PRODUCT_IMAGE =
+  'https://images.unsplash.com/photo-1610832958506-aa56368176cf?auto=format&fit=crop&w=600&q=80';
+

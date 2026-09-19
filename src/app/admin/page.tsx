@@ -44,22 +44,58 @@ import {
   Scale,
   Compass,
   Leaf,
-  FileText
+  FileText,
+  Ticket,
+  Plus,
+  Trash2,
+  Power,
+  X,
+  Percent,
+  Tag
 } from 'lucide-react';
 import { formatCurrency } from '@/lib/utils';
 import { useUser } from '@/lib/user-context';
 import { LoginModal } from '@/components/LoginModal';
-import { PeriodFilter } from '@/types';
+import { PeriodFilter, Coupon } from '@/types';
+
+function formatDateOnly(dateStr: string) {
+  if (!dateStr) return '';
+  const parts = dateStr.split('-');
+  if (parts.length === 3) {
+    return `${parts[2]}/${parts[1]}/${parts[0]}`;
+  }
+  return dateStr;
+}
 
 export default function AdminDashboardPage() {
   const { currentUser } = useUser();
-  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION'>('OVERVIEW');
+  const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION' | 'COUPONS'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
+  const [customStartDate, setCustomStartDate] = useState(() => new Date(Date.now() - 15 * 86400000).toISOString().split('T')[0]);
+  const [customEndDate, setCustomEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [stats, setStats] = useState<any>(null);
   const [vendors, setVendors] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingStats, setLoadingStats] = useState(false);
+
+  // Coupons State (US16)
+  const [coupons, setCoupons] = useState<Coupon[]>([]);
+  const [loadingCoupons, setLoadingCoupons] = useState(false);
+  const [couponSearch, setCouponSearch] = useState('');
+  const [couponStatusFilter, setCouponStatusFilter] = useState<'ALL' | 'ACTIVE' | 'PAUSED'>('ALL');
+  const [couponScopeFilter, setCouponScopeFilter] = useState<'ALL' | 'GLOBAL' | 'VENDOR'>('ALL');
+  const [showCouponModal, setShowCouponModal] = useState(false);
+  const [couponForm, setCouponForm] = useState({
+    code: '',
+    discountType: 'PERCENTAGE' as 'PERCENTAGE' | 'FIXED',
+    discountValue: '',
+    minOrderValue: '',
+    maxUses: '',
+    expiresAt: '',
+    vendorId: '',
+  });
+  const [savingCoupon, setSavingCoupon] = useState(false);
 
   // Simulator State (US26)
   const [simulatedGMV, setSimulatedGMV] = useState<number>(30000);
@@ -84,6 +120,16 @@ export default function AdminDashboardPage() {
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
+  const buildStatsUrl = (targetPeriod: PeriodFilter, start = customStartDate, end = customEndDate) => {
+    const params = new URLSearchParams();
+    params.set('period', targetPeriod);
+    if (targetPeriod === 'custom') {
+      if (start) params.set('startDate', start);
+      if (end) params.set('endDate', end);
+    }
+    return `/api/admin/stats?${params.toString()}`;
+  };
+
   const loadAdminData = async (targetPeriod = period) => {
     if (!isAdmin) {
       setLoading(false);
@@ -91,14 +137,17 @@ export default function AdminDashboardPage() {
     }
     try {
       setLoadingStats(true);
-      const [statsRes, vendRes, prodRes] = await Promise.all([
-        fetch(`/api/admin/stats?period=${targetPeriod}`),
+      const statsUrl = buildStatsUrl(targetPeriod);
+      const [statsRes, vendRes, prodRes, coupRes] = await Promise.all([
+        fetch(statsUrl),
         fetch('/api/vendors?includeAll=true'),
         fetch('/api/products?includeInactive=true'),
+        fetch('/api/coupons?includeInactive=true'),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
       if (vendRes.ok) setVendors(await vendRes.json());
       if (prodRes.ok) setProducts(await prodRes.json());
+      if (coupRes.ok) setCoupons(await coupRes.json());
     } catch (err) {
       console.error(err);
     } finally {
@@ -109,12 +158,60 @@ export default function AdminDashboardPage() {
 
   const handlePeriodChange = async (newPeriod: PeriodFilter) => {
     setPeriod(newPeriod);
+    if (newPeriod === 'custom') {
+      // Se já houver datas preenchidas, aplica o filtro automaticamente
+      if (customStartDate || customEndDate) {
+        setLoadingStats(true);
+        try {
+          const res = await fetch(buildStatsUrl('custom', customStartDate, customEndDate));
+          if (res.ok) setStats(await res.json());
+        } catch (err) {
+          console.error(err);
+        } finally {
+          setLoadingStats(false);
+        }
+      }
+      return;
+    }
+
     setLoadingStats(true);
     try {
       const res = await fetch(`/api/admin/stats?period=${newPeriod}`);
       if (res.ok) setStats(await res.json());
     } catch (err) {
       console.error(err);
+    } finally {
+      setLoadingStats(false);
+    }
+  };
+
+  const handleApplyCustomDates = async () => {
+    if (!customStartDate && !customEndDate) {
+      alert('Por favor, informe ao menos uma data inicial ou final.');
+      return;
+    }
+    if (customStartDate && customEndDate && customStartDate > customEndDate) {
+      alert('A data inicial não pode ser posterior à data final.');
+      return;
+    }
+
+    setPeriod('custom');
+    setLoadingStats(true);
+    try {
+      const res = await fetch(buildStatsUrl('custom', customStartDate, customEndDate));
+      if (res.ok) {
+        setStats(await res.json());
+        const startFormatted = customStartDate ? formatDateOnly(customStartDate) : 'Início';
+        const endFormatted = customEndDate ? formatDateOnly(customEndDate) : 'Hoje';
+        setActionFeedback(`Métricas atualizadas para o período: ${startFormatted} até ${endFormatted}.`);
+        setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao carregar métricas para o período selecionado.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao atualizar métricas.');
     } finally {
       setLoadingStats(false);
     }
@@ -156,7 +253,7 @@ export default function AdminDashboardPage() {
         setActionFeedback(`Destaque patrocinado da barraca ${nextFeatured ? 'ativado' : 'pausado'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
         // Reload stats
-        const statsRes = await fetch(`/api/admin/stats?period=${period}`);
+        const statsRes = await fetch(buildStatsUrl(period));
         if (statsRes.ok) setStats(await statsRes.json());
       }
     } catch (err) {
@@ -267,6 +364,139 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const fetchAdminCoupons = async () => {
+    setLoadingCoupons(true);
+    try {
+      const res = await fetch('/api/coupons?includeInactive=true');
+      if (res.ok) {
+        const data = await res.json();
+        setCoupons(data);
+      }
+    } catch (err) {
+      console.error('Erro ao carregar cupons:', err);
+    } finally {
+      setLoadingCoupons(false);
+    }
+  };
+
+  const handleToggleCouponActive = async (couponId: string, currentActive: boolean) => {
+    try {
+      const res = await fetch(`/api/coupons/${couponId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ active: !currentActive }),
+      });
+      if (res.ok) {
+        setCoupons(prev => prev.map(c => c.id === couponId ? { ...c, active: !currentActive } : c));
+        setActionFeedback(`Cupom ${!currentActive ? 'ativado' : 'pausado'} com sucesso.`);
+        setTimeout(() => setActionFeedback(null), 3000);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        alert(data.error || 'Erro ao atualizar status do cupom.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao atualizar status do cupom.');
+    }
+  };
+
+  const handleDeleteCoupon = async (couponId: string, couponCode: string) => {
+    if (!confirm(`Deseja realmente remover o cupom "${couponCode}"? Se ele já possuir pedidos vinculados, será desativado para preservar o histórico de compras.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/coupons/${couponId}`, {
+        method: 'DELETE',
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        if (data.deactivated) {
+          setCoupons(prev => prev.map(c => c.id === couponId ? { ...c, active: false } : c));
+          setActionFeedback(`Cupom "${couponCode}" possui pedidos e foi desativado para preservar o histórico.`);
+        } else {
+          setCoupons(prev => prev.filter(c => c.id !== couponId));
+          setActionFeedback(`Cupom "${couponCode}" excluído com sucesso.`);
+        }
+        setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        alert(data.error || 'Erro ao excluir cupom.');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao excluir cupom.');
+    }
+  };
+
+  const handleCreateAdminCoupon = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const code = couponForm.code.trim().toUpperCase();
+    const discountVal = parseFloat(couponForm.discountValue);
+    const minOrder = couponForm.minOrderValue ? parseFloat(couponForm.minOrderValue) : 0;
+    const maxUsesVal = couponForm.maxUses ? parseInt(couponForm.maxUses, 10) : undefined;
+
+    if (!code) {
+      alert('Por favor, informe o código do cupom.');
+      return;
+    }
+    if (isNaN(discountVal) || discountVal <= 0) {
+      alert('Informe um valor de desconto válido maior que zero.');
+      return;
+    }
+    if (couponForm.discountType === 'PERCENTAGE' && discountVal > 100) {
+      alert('O desconto percentual não pode ser maior que 100%.');
+      return;
+    }
+    if (couponForm.expiresAt) {
+      const exp = new Date(couponForm.expiresAt);
+      if (exp <= new Date()) {
+        alert('A data de validade deve ser uma data futura.');
+        return;
+      }
+    }
+
+    setSavingCoupon(true);
+    try {
+      const res = await fetch('/api/coupons', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          discountType: couponForm.discountType,
+          discountValue: discountVal,
+          minOrderValue: minOrder,
+          maxUses: maxUsesVal,
+          expiresAt: couponForm.expiresAt ? new Date(couponForm.expiresAt).toISOString() : null,
+          vendorId: couponForm.vendorId ? couponForm.vendorId : null,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'Erro ao cadastrar cupom.');
+        return;
+      }
+
+      setCoupons(prev => [data, ...prev]);
+      setShowCouponModal(false);
+      setCouponForm({
+        code: '',
+        discountType: 'PERCENTAGE',
+        discountValue: '',
+        minOrderValue: '',
+        maxUses: '',
+        expiresAt: '',
+        vendorId: '',
+      });
+      setActionFeedback(`Cupom "${code}" cadastrado com sucesso e já está disponível para uso!`);
+      setTimeout(() => setActionFeedback(null), 4000);
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão ao criar cupom.');
+    } finally {
+      setSavingCoupon(false);
+    }
+  };
+
   if (!isAdmin) {
     return (
       <div className="max-w-3xl mx-auto px-4 py-16 text-center">
@@ -348,6 +578,22 @@ export default function AdminDashboardPage() {
     );
   });
 
+  const filteredCoupons = coupons.filter(c => {
+    const query = couponSearch.toLowerCase();
+    const matchesSearch = !couponSearch ||
+      c.code.toLowerCase().includes(query) ||
+      (c.vendor?.businessName && c.vendor.businessName.toLowerCase().includes(query));
+
+    if (!matchesSearch) return false;
+    if (couponStatusFilter === 'ACTIVE' && !c.active) return false;
+    if (couponStatusFilter === 'PAUSED' && c.active) return false;
+
+    if (couponScopeFilter === 'GLOBAL' && c.vendorId) return false;
+    if (couponScopeFilter === 'VENDOR' && !c.vendorId) return false;
+
+    return true;
+  });
+
   const renderProductAnalytics = () => {
     const pa = stats?.productAnalytics;
     if (!pa) return null;
@@ -355,7 +601,9 @@ export default function AdminDashboardPage() {
     const periodLabel = 
       period === '7d' ? 'Últimos 7 dias' : 
       period === '30d' ? 'Últimos 30 dias' : 
-      'Todo o Histórico (Geral)';
+      period === 'custom'
+        ? `Personalizado (${customStartDate ? formatDateOnly(customStartDate) : 'Início'} até ${customEndDate ? formatDateOnly(customEndDate) : 'Hoje'})`
+        : 'Todo o Histórico (Geral)';
 
     // Step calculations for the funnel bars
     const maxFunnelVal = Math.max(pa.funnel.showcaseViews, 1);
@@ -1299,13 +1547,14 @@ export default function AdminDashboardPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3">
-          {/* Period Filter (Últimos 7 dias, 30 dias ou Geral) */}
-          <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200 text-xs shadow-xs">
+          {/* Period Filter (Últimos 7 dias, 30 dias, Geral ou Personalizado) */}
+          <div className="flex flex-wrap items-center gap-1 bg-stone-100 p-1 rounded-2xl border border-stone-200 text-xs shadow-xs">
             <div className="flex items-center gap-1 px-2 text-stone-500 font-semibold">
               <Calendar className="w-3.5 h-3.5 text-purple-600 shrink-0" />
               <span className="hidden sm:inline">Período:</span>
             </div>
             <button
+              type="button"
               onClick={() => handlePeriodChange('7d')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === '7d'
@@ -1316,6 +1565,7 @@ export default function AdminDashboardPage() {
               7 dias
             </button>
             <button
+              type="button"
               onClick={() => handlePeriodChange('30d')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === '30d'
@@ -1326,6 +1576,7 @@ export default function AdminDashboardPage() {
               30 dias
             </button>
             <button
+              type="button"
               onClick={() => handlePeriodChange('all')}
               className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
                 period === 'all'
@@ -1335,7 +1586,51 @@ export default function AdminDashboardPage() {
             >
               Geral
             </button>
+            <button
+              type="button"
+              onClick={() => handlePeriodChange('custom')}
+              className={`px-3 py-1.5 rounded-xl font-bold transition cursor-pointer ${
+                period === 'custom'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'text-stone-600 hover:text-stone-900 hover:bg-stone-200/60'
+              }`}
+            >
+              Personalizado
+            </button>
           </div>
+
+          {/* Form com Data inicial, Data final e Botão Aplicar */}
+          {period === 'custom' && (
+            <div className="flex flex-wrap items-center gap-2.5 bg-white p-1.5 px-3 rounded-2xl border border-purple-200 shadow-xs animate-in fade-in text-xs">
+              <div className="flex items-center gap-1.5">
+                <label className="font-semibold text-stone-600 text-[11px] whitespace-nowrap">Data inicial:</label>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={e => setCustomStartDate(e.target.value)}
+                  className="px-2.5 py-1 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-stone-800 text-xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <label className="font-semibold text-stone-600 text-[11px] whitespace-nowrap">Data final:</label>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={e => setCustomEndDate(e.target.value)}
+                  className="px-2.5 py-1 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:outline-none focus:ring-1 focus:ring-purple-500 font-medium text-stone-800 text-xs"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={handleApplyCustomDates}
+                className="px-3.5 py-1 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold shadow-xs transition cursor-pointer text-xs flex items-center gap-1"
+              >
+                Aplicar
+              </button>
+            </div>
+          )}
 
           {pendingVendorsCount > 0 && (
             <button
@@ -1451,6 +1746,21 @@ export default function AdminDashboardPage() {
               {pendingCertsCount}
             </span>
           )}
+        </button>
+
+        <button
+          onClick={() => setActiveTab('COUPONS')}
+          className={`pb-3 border-b-2 transition flex items-center gap-1.5 cursor-pointer ${
+            activeTab === 'COUPONS'
+              ? 'border-purple-600 text-purple-900'
+              : 'border-transparent text-stone-400 hover:text-stone-700'
+          }`}
+        >
+          <Ticket className="w-4 h-4 text-purple-600" />
+          Cupons de Desconto
+          <span className="px-1.5 py-0.2 rounded-full bg-stone-100 text-[10px] text-stone-600 font-extrabold">
+            {coupons.length}
+          </span>
         </button>
       </div>
 
@@ -2179,6 +2489,469 @@ export default function AdminDashboardPage() {
             </div>
           </div>
 
+        </div>
+      )}
+
+      {/* ================= TAB 7: COUPONS ================= */}
+      {activeTab === 'COUPONS' && (
+        <div className="space-y-6 animate-in fade-in">
+          
+          {/* Header & Action */}
+          <div className="bg-gradient-to-r from-purple-900 via-indigo-900 to-purple-800 text-white rounded-3xl p-6 sm:p-7 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1 relative z-10">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 text-purple-200 text-xs font-bold">
+                <Ticket className="w-3.5 h-3.5 text-purple-300" />
+                Gestão Geral de Cupons
+              </div>
+              <h2 className="text-xl sm:text-2xl font-black">Central de Cupons Promocionais</h2>
+              <p className="text-xs text-purple-200 max-w-xl">
+                Crie cupons globais para campanhas de toda a feira ou específicos para bancas de produtores. Acompanhe a taxa de uso e gerencie a vigência em tempo real.
+              </p>
+            </div>
+            <button
+              onClick={() => setShowCouponModal(true)}
+              className="px-5 py-3 rounded-2xl bg-white text-purple-900 font-extrabold text-xs shadow-md hover:bg-purple-50 transition shrink-0 flex items-center gap-2 cursor-pointer relative z-10"
+            >
+              <Plus className="w-4 h-4" />
+              Novo Cupom
+            </button>
+          </div>
+
+          {/* Quick Metrics */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Total de Cupons</span>
+              <span className="text-2xl font-black text-stone-900 mt-1 block">{coupons.length}</span>
+              <span className="text-[11px] text-stone-500 font-medium">Cadastrados na plataforma</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Cupons Ativos</span>
+              <span className="text-2xl font-black text-emerald-600 mt-1 block">
+                {coupons.filter(c => c.active).length}
+              </span>
+              <span className="text-[11px] text-emerald-700 font-medium">Prontos para utilização</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Total Utilizações</span>
+              <span className="text-2xl font-black text-purple-700 mt-1 block">
+                {coupons.reduce((acc, c) => acc + (c.usedCount || 0), 0)}
+              </span>
+              <span className="text-[11px] text-purple-600 font-medium">Resgatados em compras</span>
+            </div>
+
+            <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs">
+              <span className="text-[11px] font-semibold text-stone-400 block uppercase">Cupons Globais</span>
+              <span className="text-2xl font-black text-indigo-600 mt-1 block">
+                {coupons.filter(c => !c.vendorId).length}
+              </span>
+              <span className="text-[11px] text-indigo-700 font-medium">Válidos em toda a feira</span>
+            </div>
+          </div>
+
+          {/* Filters Row */}
+          <div className="bg-white p-4 rounded-2xl border border-stone-200 shadow-xs flex flex-col md:flex-row items-center justify-between gap-3 text-xs">
+            <div className="relative w-full md:w-80">
+              <Search className="w-4 h-4 text-stone-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                placeholder="Buscar por código ou banca..."
+                value={couponSearch}
+                onChange={e => setCouponSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2.5 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none text-xs"
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+              <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setCouponStatusFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'ALL'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Todos ({coupons.length})
+                </button>
+                <button
+                  onClick={() => setCouponStatusFilter('ACTIVE')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'ACTIVE'
+                      ? 'bg-white text-emerald-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Ativos ({coupons.filter(c => c.active).length})
+                </button>
+                <button
+                  onClick={() => setCouponStatusFilter('PAUSED')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponStatusFilter === 'PAUSED'
+                      ? 'bg-white text-stone-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Pausados ({coupons.filter(c => !c.active).length})
+                </button>
+              </div>
+
+              <div className="flex items-center gap-1 bg-stone-100 p-1 rounded-xl">
+                <button
+                  onClick={() => setCouponScopeFilter('ALL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'ALL'
+                      ? 'bg-white text-stone-900 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Todos Âmbitos
+                </button>
+                <button
+                  onClick={() => setCouponScopeFilter('GLOBAL')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'GLOBAL'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Globais
+                </button>
+                <button
+                  onClick={() => setCouponScopeFilter('VENDOR')}
+                  className={`px-3 py-1.5 rounded-lg font-bold transition cursor-pointer ${
+                    couponScopeFilter === 'VENDOR'
+                      ? 'bg-white text-purple-700 shadow-2xs'
+                      : 'text-stone-500 hover:text-stone-800'
+                  }`}
+                >
+                  Por Feirante
+                </button>
+              </div>
+
+              <button
+                onClick={fetchAdminCoupons}
+                disabled={loadingCoupons}
+                className="p-2.5 rounded-xl border border-stone-200 hover:bg-stone-50 text-stone-600 transition cursor-pointer"
+                title="Atualizar lista"
+              >
+                <RefreshCcw className={`w-4 h-4 ${loadingCoupons ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+
+          {/* Coupons Table */}
+          <div className="bg-white rounded-3xl border border-stone-200 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-stone-50/80 border-b border-stone-200 text-stone-500 font-bold uppercase text-[11px] tracking-wider">
+                    <th className="p-3.5">Código</th>
+                    <th className="p-3.5">Âmbito / Banca</th>
+                    <th className="p-3.5">Desconto</th>
+                    <th className="p-3.5">Regras Mínimas</th>
+                    <th className="p-3.5">Utilizações</th>
+                    <th className="p-3.5">Validade</th>
+                    <th className="p-3.5">Status</th>
+                    <th className="p-3.5 text-right">Ações</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-stone-100 font-medium text-stone-700">
+                  {filteredCoupons.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="p-8 text-center text-stone-400">
+                        Nenhum cupom promocional encontrado com os filtros selecionados.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCoupons.map(c => {
+                      const isExpired = c.expiresAt && new Date(c.expiresAt) < new Date();
+                      const isExhausted = c.maxUses && c.usedCount >= c.maxUses;
+                      
+                      return (
+                        <tr key={c.id} className="hover:bg-stone-50/60 transition">
+                          <td className="p-3.5">
+                            <span className="font-mono font-black text-sm px-2.5 py-1 rounded-lg bg-purple-50 text-purple-800 border border-purple-200/80 tracking-wider">
+                              {c.code}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.vendorId ? (
+                              <div className="flex items-center gap-1.5">
+                                <Store className="w-3.5 h-3.5 text-stone-400 shrink-0" />
+                                <span className="font-bold text-stone-900">
+                                  {c.vendor?.businessName || 'Banca Específica'}
+                                </span>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 font-black text-[10px] border border-indigo-200">
+                                <Sparkles className="w-3 h-3 text-indigo-600" />
+                                Global (Toda a Feira)
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            <span className="font-extrabold text-stone-900 text-sm">
+                              {c.discountType === 'PERCENTAGE'
+                                ? `${c.discountValue}% OFF`
+                                : `${formatCurrency(c.discountValue)} OFF`}
+                            </span>
+                          </td>
+
+                          <td className="p-3.5 text-stone-600">
+                            {c.minOrderValue && c.minOrderValue > 0 ? (
+                              <span>Mínimo {formatCurrency(c.minOrderValue)}</span>
+                            ) : (
+                              <span className="text-stone-400">Sem pedido mínimo</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            <div className="flex items-center gap-1.5">
+                              <span className="font-bold text-stone-900">{c.usedCount}</span>
+                              <span className="text-stone-400">
+                                / {c.maxUses ? `${c.maxUses} usos` : '∞ ilimitado'}
+                              </span>
+                            </div>
+                            {isExhausted && (
+                              <span className="text-[10px] font-bold text-amber-700 bg-amber-50 px-1.5 py-0.5 rounded-md inline-block mt-0.5">
+                                Limite esgotado
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.expiresAt ? (
+                              <div>
+                                <span className={isExpired ? 'line-through text-red-500' : 'text-stone-700'}>
+                                  {new Date(c.expiresAt).toLocaleDateString('pt-BR', {
+                                    day: '2-digit',
+                                    month: '2-digit',
+                                    year: 'numeric',
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                  })}
+                                </span>
+                                {isExpired && (
+                                  <span className="block text-[10px] text-red-600 font-bold">
+                                    Vencido
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-stone-400">Sem expiração</span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5">
+                            {c.active ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                <CheckCircle2 className="w-3 h-3 text-emerald-600" />
+                                Ativo
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-stone-100 text-stone-600 border border-stone-200">
+                                <XCircle className="w-3 h-3 text-stone-400" />
+                                Pausado
+                              </span>
+                            )}
+                          </td>
+
+                          <td className="p-3.5 text-right space-x-2 whitespace-nowrap">
+                            <button
+                              onClick={() => handleToggleCouponActive(c.id, c.active)}
+                              className={`px-3 py-1.5 rounded-xl font-bold transition text-xs cursor-pointer inline-flex items-center gap-1 ${
+                                c.active
+                                  ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                                  : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              }`}
+                              title={c.active ? 'Pausar cupom' : 'Ativar cupom'}
+                            >
+                              <Power className="w-3 h-3" />
+                              {c.active ? 'Pausar' : 'Ativar'}
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteCoupon(c.id, c.code)}
+                              className="px-2.5 py-1.5 rounded-xl bg-stone-50 hover:bg-red-50 hover:text-red-700 hover:border-red-200 border border-stone-200 text-stone-500 font-bold transition cursor-pointer text-xs inline-flex items-center gap-1"
+                              title="Excluir ou desativar cupom"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              Excluir
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+      )}
+
+      {/* Modal: Cadastrar Novo Cupom (Admin) */}
+      {showCouponModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-stone-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-3xl shadow-2xl border border-stone-200 w-full max-w-lg overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
+            <div className="p-5 border-b border-stone-100 flex items-center justify-between bg-purple-50/70">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-600 text-white flex items-center justify-center">
+                  <Ticket className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-stone-900 text-base">Cadastrar Novo Cupom</h3>
+                  <p className="text-[11px] text-stone-500">Defina o código, desconto e regras de aplicação</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCouponModal(false)}
+                className="p-1.5 rounded-full hover:bg-stone-200/60 transition text-stone-400 hover:text-stone-700 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateAdminCoupon} className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Código do Cupom *
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Ex: FEIRAE15, BEMVINDO"
+                  value={couponForm.code}
+                  onChange={e => setCouponForm({ ...couponForm, code: e.target.value.toUpperCase() })}
+                  className="w-full px-3 py-2.5 bg-stone-50 border border-stone-200 rounded-xl font-mono uppercase font-black tracking-wider focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Âmbito / Banca Elegível
+                </label>
+                <select
+                  value={couponForm.vendorId}
+                  onChange={e => setCouponForm({ ...couponForm, vendorId: e.target.value })}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                >
+                  <option value="">✨ Global — Válido em todas as bancas da Feira</option>
+                  {vendors.map(v => (
+                    <option key={v.id} value={v.id}>
+                      🏪 {v.businessName}
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[11px] text-stone-400 mt-1 block">
+                  Selecione &apos;Global&apos; para conceder o benefício em qualquer barraca parceira.
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Tipo de Desconto *
+                  </label>
+                  <select
+                    value={couponForm.discountType}
+                    onChange={e => setCouponForm({ ...couponForm, discountType: e.target.value as any })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium"
+                  >
+                    <option value="PERCENTAGE">Porcentagem (%)</option>
+                    <option value="FIXED">Valor Fixo (R$)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Valor do Desconto *
+                  </label>
+                  <div className="relative">
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0.01"
+                      max={couponForm.discountType === 'PERCENTAGE' ? '100' : undefined}
+                      required
+                      placeholder={couponForm.discountType === 'PERCENTAGE' ? '10' : '5.00'}
+                      value={couponForm.discountValue}
+                      onChange={e => setCouponForm({ ...couponForm, discountValue: e.target.value })}
+                      className="w-full pl-8 pr-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none font-bold"
+                    />
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-stone-400">
+                      {couponForm.discountType === 'PERCENTAGE' ? '%' : 'R$'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Valor Mínimo do Pedido (R$)
+                  </label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0.00 (opcional)"
+                    value={couponForm.minOrderValue}
+                    onChange={e => setCouponForm({ ...couponForm, minOrderValue: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="font-bold text-stone-700 block mb-1">
+                    Limite Máximo de Usos
+                  </label>
+                  <input
+                    type="number"
+                    min="1"
+                    placeholder="Ilimitado se vazio"
+                    value={couponForm.maxUses}
+                    onChange={e => setCouponForm({ ...couponForm, maxUses: e.target.value })}
+                    className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="font-bold text-stone-700 block mb-1">
+                  Data de Validade (Expiração)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={couponForm.expiresAt}
+                  onChange={e => setCouponForm({ ...couponForm, expiresAt: e.target.value })}
+                  className="w-full px-3 py-2 bg-stone-50 border border-stone-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-purple-500 focus:outline-none"
+                />
+              </div>
+
+              <div className="pt-3 border-t border-stone-100 flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCouponModal(false)}
+                  className="flex-1 py-2.5 rounded-xl border border-stone-200 text-stone-700 font-semibold hover:bg-stone-50 cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="submit"
+                  disabled={savingCoupon}
+                  className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+                >
+                  {savingCoupon ? 'Salvando...' : 'Criar Cupom'}
+                </button>
+              </div>
+            </form>
+          </div>
         </div>
       )}
 

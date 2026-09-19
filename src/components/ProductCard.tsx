@@ -5,7 +5,7 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { Plus, Minus, Check, Leaf, AlertCircle, Store, ShieldAlert, Scale } from 'lucide-react';
 import { Product } from '@/types';
-import { formatCurrency, formatWeight } from '@/lib/utils';
+import { formatCurrency, formatWeight, DEFAULT_PRODUCT_IMAGE } from '@/lib/utils';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
 
@@ -18,10 +18,10 @@ export function ProductCard({
 }) {
   const { addItem, setItemQuantity, items } = useCart();
   const { currentUser } = useUser();
-  const [feedback, setFeedback] = useState<string | null>(null);
-
   const isAdmin = currentUser?.role === 'ADMIN';
   const isVendor = currentUser?.role === 'VENDOR';
+  const [feedback, setFeedback] = useState<string | null>(null);
+
   const cartItem = items.find(i => i.product.id === product.id);
   const inCartQty = cartItem?.quantity || 0;
   const isOutOfStock = product.stock <= 0;
@@ -96,17 +96,14 @@ export function ProductCard({
       
       {/* Product Image */}
       <div className="relative aspect-4/3 w-full bg-stone-100 overflow-hidden">
-        {product.imageUrl ? (
-          <img
-            src={product.imageUrl}
-            alt={product.name}
-            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-          />
-        ) : (
-          <div className="w-full h-full flex items-center justify-center text-stone-400 bg-stone-100">
-            <Store className="w-10 h-10 stroke-1" />
-          </div>
-        )}
+        <img
+          src={product.imageUrl?.trim() ? product.imageUrl.trim() : DEFAULT_PRODUCT_IMAGE}
+          alt={product.name}
+          onError={(e) => {
+            (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+          }}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+        />
 
         {/* Category, Organic & Weighable Badges */}
         <div className="absolute top-2.5 left-2.5 flex flex-wrap gap-1.5">

@@ -7,17 +7,40 @@ export const dynamic = 'force-dynamic';
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const periodParam = searchParams.get('period');
-  const period: PeriodFilter = (periodParam === '7d' || periodParam === '30d') ? periodParam : 'all';
+  const startDateParam = searchParams.get('startDate');
+  const endDateParam = searchParams.get('endDate');
+
+  const period: PeriodFilter = 
+    (periodParam === '7d' || periodParam === '30d' || periodParam === 'custom') 
+      ? periodParam 
+      : 'all';
 
   try {
     const now = new Date();
-    const startDate = period === '7d' 
-      ? new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
-      : period === '30d'
-        ? new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-        : null;
+    let startDate: Date | null = null;
+    let endDate: Date | null = null;
 
-    const ordersWhere = startDate ? { createdAt: { gte: startDate } } : {};
+    if (period === '7d') {
+      startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (period === '30d') {
+      startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (period === 'custom') {
+      if (startDateParam) {
+        startDate = new Date(`${startDateParam}T00:00:00`);
+      }
+      if (endDateParam) {
+        endDate = new Date(`${endDateParam}T23:59:59.999`);
+      }
+    }
+
+    const ordersWhere: any = {};
+    if (startDate && endDate) {
+      ordersWhere.createdAt = { gte: startDate, lte: endDate };
+    } else if (startDate) {
+      ordersWhere.createdAt = { gte: startDate };
+    } else if (endDate) {
+      ordersWhere.createdAt = { lte: endDate };
+    }
 
     // Parallel fetch from Prisma
     const [vendors, orders, subscribersCount, featuredCount] = await Promise.all([
@@ -76,9 +99,26 @@ export async function GET(request: Request) {
     const ordersCompleted = ordersByStatus.retirado;
     const totalOrderItemsCount = orders.reduce((acc: number, o: any) => acc + (o.items?.length || 1), 0);
     
-    const cartAdditions = Math.max(ordersCreated, Math.round(ordersCreated * 1.8 + totalOrderItemsCount * 0.6) + (period === '7d' ? 12 : period === '30d' ? 38 : 65));
-    const viewsMultiplier = period === '7d' ? 4.2 : period === '30d' ? 4.5 : 4.8;
-    const baseViews = period === '7d' ? 95 : period === '30d' ? 340 : 580;
+    const daysDiff = (startDate && endDate) 
+      ? Math.max(1, Math.round((endDate.getTime() - startDate.getTime()) / (24 * 60 * 60 * 1000)))
+      : 30;
+    const cartAdditionsBonus = 
+      period === '7d' ? 12 : 
+      period === '30d' ? 38 : 
+      period === 'custom' ? Math.round(Math.min(100, Math.max(10, daysDiff * 1.5))) : 
+      65;
+    const viewsMultiplier = 
+      period === '7d' ? 4.2 : 
+      period === '30d' ? 4.5 : 
+      period === 'custom' ? (daysDiff <= 7 ? 4.2 : daysDiff <= 30 ? 4.5 : 4.8) : 
+      4.8;
+    const baseViews = 
+      period === '7d' ? 95 : 
+      period === '30d' ? 340 : 
+      period === 'custom' ? Math.round(Math.min(800, Math.max(80, daysDiff * 14))) : 
+      580;
+
+    const cartAdditions = Math.max(ordersCreated, Math.round(ordersCreated * 1.8 + totalOrderItemsCount * 0.6) + cartAdditionsBonus);
     const showcaseViews = Math.round(cartAdditions * viewsMultiplier + baseViews);
 
     const viewsToCartRate = showcaseViews > 0 ? Math.round(((cartAdditions / showcaseViews) * 100) * 10) / 10 : 0;

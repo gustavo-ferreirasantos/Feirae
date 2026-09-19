@@ -126,10 +126,11 @@ export interface Coupon {
   discountType: DiscountType;
   discountValue: number;
   minOrderValue: number;
-  maxUses?: number;
+  maxUses?: number | null;
   usedCount: number;
-  expiresAt?: string;
-  vendorId?: string;
+  expiresAt?: string | null;
+  vendorId?: string | null;
+  vendor?: { id?: string; businessName?: string };
   active: boolean;
   createdAt?: string;
   updatedAt?: string;
@@ -144,6 +145,13 @@ export interface Order {
   clientEmail: string;
   vendorId: string;
   vendorName?: string;
+  vendorPhone?: string;
+  vendor?: {
+    id: string;
+    businessName: string;
+    fairLocation?: string;
+    whatsappPhone?: string;
+  };
   totalAmount: number;
   couponCode?: string;
   discountAmount?: number;
@@ -190,7 +198,7 @@ export interface CartItem {
   quantity: number;
 }
 
-export type PeriodFilter = '7d' | '30d' | 'all';
+export type PeriodFilter = '7d' | '30d' | 'all' | 'custom';
 
 export interface ProductFunnelMetrics {
   showcaseViews: number;

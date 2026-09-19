@@ -19,18 +19,21 @@ import {
   Tag,
   CheckCircle2,
   X,
-  Scale
+  Scale,
+  Ticket
 } from 'lucide-react';
 import { useCart } from '@/lib/cart-context';
 import { useUser } from '@/lib/user-context';
-import { formatCurrency, formatWeight } from '@/lib/utils';
-import { PickupWindow } from '@/types';
+import { formatCurrency, formatWeight, DEFAULT_PRODUCT_IMAGE } from '@/lib/utils';
+import { PickupWindow, Coupon } from '@/types';
 import { MercadoPagoModal } from '@/components/MercadoPagoModal';
 
 export default function CartCheckoutPage() {
   const router = useRouter();
   const { items, vendorId, vendorName, removeItem, updateQuantity, clearCart, totalAmount, totalItems } = useCart();
   const { currentUser } = useUser();
+
+  const activeVendorId = vendorId || (items.length > 0 ? items[0].product.vendorId : null);
 
   const [pickupWindows, setPickupWindows] = useState<PickupWindow[]>([]);
   const [selectedWindowId, setSelectedWindowId] = useState<string>('');
@@ -44,16 +47,38 @@ export default function CartCheckoutPage() {
 
   // Coupon state
   const [couponInput, setCouponInput] = useState('');
-  const [appliedCoupon, setAppliedCoupon] = useState<{ code: string; discountAmount: number } | null>(null);
+  const [appliedCoupon, setAppliedCoupon] = useState<{
+    code: string;
+    discountType: 'PERCENTAGE' | 'FIXED';
+    discountValue: number;
+    minOrderValue: number;
+    discountAmount: number;
+  } | null>(null);
   const [couponError, setCouponError] = useState<string | null>(null);
   const [isValidatingCoupon, setIsValidatingCoupon] = useState(false);
 
-  const discountAmount = appliedCoupon ? appliedCoupon.discountAmount : 0;
+  // Available Coupons State (US16)
+  const [availableCoupons, setAvailableCoupons] = useState<Coupon[]>([]);
+  const [loadingAvailableCoupons, setLoadingAvailableCoupons] = useState(false);
+
+  // Dynamic discount calculation
+  let discountAmount = 0;
+  let isCouponBelowMin = false;
+  if (appliedCoupon) {
+    if (totalAmount < (appliedCoupon.minOrderValue || 0)) {
+      isCouponBelowMin = true;
+      discountAmount = 0;
+    } else if (appliedCoupon.discountType === 'PERCENTAGE') {
+      discountAmount = Math.round((totalAmount * (appliedCoupon.discountValue / 100)) * 100) / 100;
+    } else {
+      discountAmount = Math.min(totalAmount, appliedCoupon.discountValue);
+    }
+  }
   const finalCheckoutAmount = Math.max(0, Math.round((totalAmount - discountAmount) * 100) / 100);
 
   useEffect(() => {
-    if (vendorId) {
-      fetch('/api/vendors/' + vendorId)
+    if (activeVendorId) {
+      fetch('/api/vendors/' + activeVendorId)
         .then(res => res.json())
         .then(data => {
           if (data.pickupWindows && data.pickupWindows.length > 0) {
@@ -63,12 +88,58 @@ export default function CartCheckoutPage() {
         })
         .catch(console.error);
     }
-  }, [vendorId]);
+  }, [activeVendorId]);
 
-  const handleApplyCoupon = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!couponInput.trim()) return;
+  // Fetch available coupons eligible for this cart & vendor
+  useEffect(() => {
+    if (!activeVendorId || items.length === 0) {
+      setAvailableCoupons([]);
+      return;
+    }
 
+    let isMounted = true;
+    setLoadingAvailableCoupons(true);
+
+    fetch(`/api/coupons?vendorId=${encodeURIComponent(activeVendorId)}`)
+      .then(res => res.ok ? res.json() : [])
+      .then((data: Coupon[]) => {
+        if (!isMounted) return;
+        if (Array.isArray(data)) {
+          const now = Date.now();
+          const filtered = data.filter(c => {
+            // Must be active
+            if (!c.active) return false;
+            // Must not be expired
+            if (c.expiresAt && new Date(c.expiresAt).getTime() < now) return false;
+            // Must not exceed max uses
+            if (c.maxUses !== null && c.maxUses !== undefined && c.usedCount >= c.maxUses) return false;
+            // Must be global or belong to this vendor
+            if (c.vendorId && c.vendorId !== activeVendorId) return false;
+            return true;
+          });
+          setAvailableCoupons(filtered);
+        } else {
+          setAvailableCoupons([]);
+        }
+      })
+      .catch(err => {
+        console.error('Erro ao buscar cupons disponíveis:', err);
+        if (isMounted) setAvailableCoupons([]);
+      })
+      .finally(() => {
+        if (isMounted) setLoadingAvailableCoupons(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
+  }, [activeVendorId, items.length]);
+
+  const applyCouponCode = async (codeToApply: string) => {
+    const formatted = codeToApply.trim().toUpperCase();
+    if (!formatted) return;
+
+    setCouponInput(formatted);
     setIsValidatingCoupon(true);
     setCouponError(null);
 
@@ -77,9 +148,9 @@ export default function CartCheckoutPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          code: couponInput,
+          code: formatted,
           cartTotal: totalAmount,
-          vendorId,
+          vendorId: activeVendorId,
         }),
       });
       const data = await res.json();
@@ -89,6 +160,9 @@ export default function CartCheckoutPage() {
       } else {
         setAppliedCoupon({
           code: data.coupon.code,
+          discountType: data.coupon.discountType,
+          discountValue: data.coupon.discountValue,
+          minOrderValue: data.coupon.minOrderValue,
           discountAmount: data.discountAmount,
         });
         setCouponError(null);
@@ -100,6 +174,11 @@ export default function CartCheckoutPage() {
     }
   };
 
+  const handleApplyCoupon = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    applyCouponCode(couponInput);
+  };
+
   const handleRemoveCoupon = () => {
     setAppliedCoupon(null);
     setCouponInput('');
@@ -108,7 +187,12 @@ export default function CartCheckoutPage() {
 
   const handleCheckout = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (items.length === 0 || !vendorId) return;
+    if (items.length === 0 || !activeVendorId) return;
+
+    if (appliedCoupon && isCouponBelowMin) {
+      setError(`O cupom ${appliedCoupon.code} requer um valor mínimo de pedido de ${formatCurrency(appliedCoupon.minOrderValue)}.`);
+      return;
+    }
 
     setIsSubmitting(true);
     setError(null);
@@ -128,8 +212,8 @@ export default function CartCheckoutPage() {
           clientName: currentUser?.name || 'Cliente Consumidor',
           clientPhone: currentUser?.phone || '(11) 98765-4321',
           clientEmail: currentUser?.email || 'cliente@feirae.com',
-          vendorId: vendorId,
-          vendorName: vendorName || undefined,
+          vendorId: activeVendorId,
+          vendorName: vendorName || items[0]?.product?.vendorName || undefined,
           items: items.map(i => ({
             productId: i.product.id,
             productName: i.product.name,
@@ -273,14 +357,15 @@ export default function CartCheckoutPage() {
               return (
                 <div key={item.product.id} className="p-4 sm:p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                   <div className="flex items-center gap-4 min-w-0">
-                    <div className="w-16 h-16 rounded-xl bg-stone-100 overflow-hidden shrink-0">
-                      {item.product.imageUrl ? (
-                        <img src={item.product.imageUrl} alt={item.product.name} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-stone-300">
-                          <Store className="w-6 h-6" />
-                        </div>
-                      )}
+                    <div className="w-16 h-16 rounded-xl bg-stone-100 overflow-hidden shrink-0 border border-stone-200/60">
+                      <img
+                        src={item.product.imageUrl?.trim() ? item.product.imageUrl.trim() : DEFAULT_PRODUCT_IMAGE}
+                        alt={item.product.name}
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).src = DEFAULT_PRODUCT_IMAGE;
+                        }}
+                        className="w-full h-full object-cover"
+                      />
                     </div>
 
                     <div className="flex-1 min-w-0">
@@ -563,23 +648,41 @@ export default function CartCheckoutPage() {
                   </button>
                 </div>
               ) : (
-                <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-2xl">
+                <div className={`flex items-center justify-between p-3 rounded-2xl border ${
+                  isCouponBelowMin 
+                    ? 'bg-amber-50 border-amber-200' 
+                    : 'bg-emerald-50 border-emerald-200'
+                }`}>
                   <div className="flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    {isCouponBelowMin ? (
+                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    ) : (
+                      <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                    )}
                     <div>
-                      <div className="text-xs font-bold text-emerald-900 flex items-center gap-1.5">
+                      <div className={`text-xs font-bold flex items-center gap-1.5 ${
+                        isCouponBelowMin ? 'text-amber-900' : 'text-emerald-900'
+                      }`}>
                         <span>Cupom {appliedCoupon.code}</span>
-                        <span className="bg-emerald-200 text-emerald-900 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
-                          -{formatCurrency(appliedCoupon.discountAmount)}
-                        </span>
+                        {!isCouponBelowMin && (
+                          <span className="bg-emerald-200 text-emerald-900 text-[10px] px-1.5 py-0.5 rounded font-mono font-bold">
+                            -{formatCurrency(discountAmount)}
+                          </span>
+                        )}
                       </div>
-                      <div className="text-[10px] text-emerald-700 font-medium">Desconto aplicado com sucesso!</div>
+                      <div className={`text-[10px] font-medium ${
+                        isCouponBelowMin ? 'text-amber-700 font-semibold' : 'text-emerald-700'
+                      }`}>
+                        {isCouponBelowMin 
+                          ? `Pedido mínimo de ${formatCurrency(appliedCoupon.minOrderValue)} necessário para ativar o desconto.`
+                          : 'Desconto aplicado com sucesso!'}
+                      </div>
                     </div>
                   </div>
                   <button
                     type="button"
                     onClick={handleRemoveCoupon}
-                    className="p-1 text-emerald-700 hover:text-red-600 hover:bg-emerald-100 rounded-lg transition"
+                    className="p-1 text-stone-500 hover:text-red-600 hover:bg-stone-100 rounded-lg transition cursor-pointer"
                     title="Remover cupom"
                   >
                     <X className="w-4 h-4" />
@@ -593,6 +696,124 @@ export default function CartCheckoutPage() {
                   <span>{couponError}</span>
                 </p>
               )}
+
+              {/* Seção: Cupons Disponíveis */}
+              <div className="mt-3.5 pt-3 border-t border-stone-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-stone-600 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Ticket className="w-3.5 h-3.5 text-amber-600" />
+                    Cupons disponíveis
+                  </span>
+                  {availableCoupons.length > 0 && (
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200">
+                      {availableCoupons.length} {availableCoupons.length === 1 ? 'disponível' : 'disponíveis'}
+                    </span>
+                  )}
+                </div>
+
+                {loadingAvailableCoupons ? (
+                  <div className="p-3 text-center text-[11px] text-stone-400 flex items-center justify-center gap-2">
+                    <Loader2 className="w-3.5 h-3.5 animate-spin text-feira-600" />
+                    <span>Buscando cupons disponíveis...</span>
+                  </div>
+                ) : availableCoupons.length === 0 ? (
+                  <p className="text-[11px] text-stone-400 italic">
+                    Nenhum cupom promocional disponível para esta banca no momento.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {availableCoupons.map(c => {
+                      const isApplied = appliedCoupon?.code === c.code;
+                      const hasMinOrder = Boolean(c.minOrderValue && c.minOrderValue > 0);
+                      const isBelowMin = hasMinOrder && totalAmount < c.minOrderValue;
+                      const missingAmount = isBelowMin ? c.minOrderValue - totalAmount : 0;
+
+                      return (
+                        <div
+                          key={c.id}
+                          className={`p-3 rounded-2xl border transition flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 ${
+                            isApplied
+                              ? 'bg-emerald-50/70 border-emerald-300 shadow-2xs'
+                              : isBelowMin
+                              ? 'bg-stone-50/80 border-stone-200'
+                              : 'bg-amber-50/40 border-amber-200/80 hover:border-amber-300'
+                          }`}
+                        >
+                          <div className="space-y-1 min-w-0">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <span className="font-mono font-black text-xs px-2 py-0.5 rounded-lg bg-white border border-stone-300 text-stone-900 tracking-wider">
+                                {c.code}
+                              </span>
+                              <span className="font-extrabold text-xs text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">
+                                {c.discountType === 'PERCENTAGE'
+                                  ? `${c.discountValue}% OFF`
+                                  : `${formatCurrency(c.discountValue)} OFF`}
+                              </span>
+                              {!c.vendorId ? (
+                                <span className="text-[10px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md">
+                                  Global
+                                </span>
+                              ) : (
+                                <span className="text-[10px] font-bold text-amber-800 bg-amber-100/60 border border-amber-200 px-1.5 py-0.5 rounded-md truncate max-w-[150px]">
+                                  {vendorName || 'Banca'}
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="text-[11px] text-stone-600">
+                              {hasMinOrder ? (
+                                isBelowMin ? (
+                                  <span className="text-amber-700 font-semibold flex items-center gap-1">
+                                    <AlertCircle className="w-3 h-3 shrink-0" />
+                                    Pedido mínimo de {formatCurrency(c.minOrderValue)} (Faltam {formatCurrency(missingAmount)})
+                                  </span>
+                                ) : (
+                                  <span className="text-stone-500">
+                                    Pedido mínimo: {formatCurrency(c.minOrderValue)}
+                                  </span>
+                                )
+                              ) : (
+                                <span className="text-stone-400">Sem valor mínimo de pedido</span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="shrink-0 flex items-center">
+                            {isApplied ? (
+                              <span className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-2xs">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                Aplicado
+                              </span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => applyCouponCode(c.code)}
+                                disabled={isValidatingCoupon || isBelowMin}
+                                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer ${
+                                  isBelowMin
+                                    ? 'bg-stone-200 text-stone-400 cursor-not-allowed border border-stone-200'
+                                    : 'bg-amber-600 hover:bg-amber-700 text-white shadow-xs'
+                                }`}
+                                title={
+                                  isBelowMin
+                                    ? `Adicione mais ${formatCurrency(missingAmount)} para ativar este cupom`
+                                    : `Aplicar cupom ${c.code}`
+                                }
+                              >
+                                {isValidatingCoupon && couponInput === c.code ? (
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                ) : (
+                                  'Aplicar'
+                                )}
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
 
             <div>
@@ -613,10 +834,10 @@ export default function CartCheckoutPage() {
                 <span>{items.some(i => i.product.isWeighable) ? 'Subtotal estimado de itens:' : 'Subtotal de itens:'}</span>
                 <span>{formatCurrency(totalAmount)}</span>
               </div>
-              {appliedCoupon && (
+              {appliedCoupon && !isCouponBelowMin && (
                 <div className="flex justify-between text-xs text-emerald-600 font-bold">
                   <span>Desconto ({appliedCoupon.code}):</span>
-                  <span>- {formatCurrency(appliedCoupon.discountAmount)}</span>
+                  <span>- {formatCurrency(discountAmount)}</span>
                 </div>
               )}
               <div className="flex justify-between text-xs text-stone-500">

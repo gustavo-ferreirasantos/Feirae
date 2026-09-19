@@ -76,7 +76,7 @@ async function handleUpdate(request: Request, id: string) {
         ...(body.unit && { unit: body.unit }),
         ...(body.price !== undefined && { price: Number(body.price) }),
         ...(body.stock !== undefined && { stock: Number(body.stock) }),
-        ...(body.imageUrl !== undefined && { imageUrl: body.imageUrl }),
+        ...(body.imageUrl !== undefined && { imageUrl: body.imageUrl ? String(body.imageUrl).trim() : null }),
         ...(body.isOrganic !== undefined && { isOrganic: Boolean(body.isOrganic) }),
         ...(body.isWeighable !== undefined && { isWeighable: Boolean(body.isWeighable) }),
         ...(body.isActive !== undefined && { isActive: Boolean(body.isActive) }),

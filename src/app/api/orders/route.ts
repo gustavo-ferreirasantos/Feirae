@@ -84,24 +84,45 @@ export async function GET(request: Request) {
       where: whereClause,
       include: {
         items: true,
-        vendor: { select: { id: true, businessName: true, fairLocation: true, category: true, slug: true, userId: true } },
+        vendor: { 
+          select: { 
+            id: true, 
+            businessName: true, 
+            fairLocation: true, 
+            category: true, 
+            slug: true, 
+            userId: true,
+            whatsappPhone: true,
+            user: { select: { phone: true, whatsappPhone: true } }
+          } 
+        },
         client: { select: { id: true, name: true, phone: true, email: true } },
         review: true,
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const formattedOrders = fetchedDbOrders.map(o => ({
-      ...o,
-      createdAt: o.createdAt.toISOString ? o.createdAt.toISOString() : String(o.createdAt),
-      vendorName: o.vendor?.businessName,
-      items: o.items,
-      review: o.review ? {
-        ...o.review,
-        createdAt: o.review.createdAt.toISOString ? o.review.createdAt.toISOString() : String(o.review.createdAt),
-        vendorReplyAt: o.review.vendorReplyAt?.toISOString ? o.review.vendorReplyAt.toISOString() : o.review.vendorReplyAt,
-      } : undefined,
-    }));
+    const formattedOrders = fetchedDbOrders.map(o => {
+      const vendorPhone = o.vendor?.whatsappPhone || o.vendor?.user?.whatsappPhone || o.vendor?.user?.phone || undefined;
+      return {
+        ...o,
+        createdAt: o.createdAt.toISOString ? o.createdAt.toISOString() : String(o.createdAt),
+        vendorName: o.vendor?.businessName,
+        vendorPhone,
+        vendor: o.vendor ? {
+          id: o.vendor.id,
+          businessName: o.vendor.businessName,
+          fairLocation: o.vendor.fairLocation,
+          whatsappPhone: vendorPhone,
+        } : undefined,
+        items: o.items,
+        review: o.review ? {
+          ...o.review,
+          createdAt: o.review.createdAt.toISOString ? o.review.createdAt.toISOString() : String(o.review.createdAt),
+          vendorReplyAt: o.review.vendorReplyAt?.toISOString ? o.review.vendorReplyAt.toISOString() : o.review.vendorReplyAt,
+        } : undefined,
+      };
+    });
 
     return NextResponse.json(formattedOrders);
   } catch (err: any) {
@@ -193,14 +214,17 @@ export async function POST(request: Request) {
       const formattedCode = body.couponCode.trim().toUpperCase();
       const coupon = await prisma.coupon.findUnique({ where: { code: formattedCode } });
 
-      if (!coupon || !coupon.active) {
-        return NextResponse.json({ error: 'Cupom inválido ou inativo.' }, { status: 400 });
+      if (!coupon) {
+        return NextResponse.json({ error: 'Cupom não encontrado no sistema.' }, { status: 400 });
+      }
+      if (!coupon.active) {
+        return NextResponse.json({ error: 'Este cupom não está mais ativo.' }, { status: 400 });
       }
       if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) {
         return NextResponse.json({ error: 'Este cupom está expirado.' }, { status: 400 });
       }
       if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
-        return NextResponse.json({ error: 'Este cupom já atingiu o limite de utilizações.' }, { status: 400 });
+        return NextResponse.json({ error: 'Este cupom já atingiu o limite máximo de utilizações.' }, { status: 400 });
       }
       if (calculatedTotal < coupon.minOrderValue) {
         return NextResponse.json({
@@ -208,7 +232,7 @@ export async function POST(request: Request) {
         }, { status: 400 });
       }
       if (coupon.vendorId && coupon.vendorId !== vendor.id) {
-        return NextResponse.json({ error: 'Este cupom é exclusivo para outra banca.' }, { status: 400 });
+        return NextResponse.json({ error: 'Este cupom é exclusivo para outra banca de feirante.' }, { status: 400 });
       }
 
       appliedCouponCode = coupon.code;
