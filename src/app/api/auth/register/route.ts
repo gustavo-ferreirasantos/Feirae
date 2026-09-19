@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { hashPassword } from '@/lib/auth';
 import { Role } from '@prisma/client';
+import { randomInt } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -47,7 +48,15 @@ export async function POST(request: Request) {
       .replace(/[\u0300-\u036f]/g, '')
       .replace(/[^a-z0-9]+/g, '-')
       .replace(/(^-|-$)/g, '');
-    const uniqueSlug = `${slugBase}-${Math.floor(100 + Math.random() * 900)}`;
+    let uniqueSlug = `${slugBase}-${Date.now()}`;
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const candidate = `${slugBase}-${randomInt(1000, 10000)}`;
+      const taken = await prisma.vendor.findUnique({ where: { slug: candidate }, select: { id: true } });
+      if (!taken) {
+        uniqueSlug = candidate;
+        break;
+      }
+    }
 
     if (role === 'VENDOR') {
       if (!businessName || !category || !fairLocation) {

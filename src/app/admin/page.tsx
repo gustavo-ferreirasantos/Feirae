@@ -52,7 +52,7 @@ import { LoginModal } from '@/components/LoginModal';
 import { PeriodFilter } from '@/types';
 
 export default function AdminDashboardPage() {
-  const { currentUser } = useUser();
+  const { currentUser, isLoaded } = useUser();
   const [activeTab, setActiveTab] = useState<'OVERVIEW' | 'AARRR' | 'SIMULATOR' | 'VENDORS' | 'PRODUCTS' | 'CERT_MODERATION'>('OVERVIEW');
   const [period, setPeriod] = useState<PeriodFilter>('all');
   const [stats, setStats] = useState<any>(null);
@@ -81,6 +81,13 @@ export default function AdminDashboardPage() {
 
   const [isLoginModalOpen, setIsLoginModalOpen] = useState(false);
   const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState(false);
+
+  const showActionError = (message: string) => {
+    setActionError(message);
+    setTimeout(() => setActionError(null), 5000);
+  };
 
   const isAdmin = currentUser?.role === 'ADMIN';
 
@@ -91,16 +98,19 @@ export default function AdminDashboardPage() {
     }
     try {
       setLoadingStats(true);
+      setLoadError(false);
       const [statsRes, vendRes, prodRes] = await Promise.all([
         fetch(`/api/admin/stats?period=${targetPeriod}`),
         fetch('/api/vendors?includeAll=true'),
         fetch('/api/products?includeInactive=true'),
       ]);
       if (statsRes.ok) setStats(await statsRes.json());
+      else setLoadError(true);
       if (vendRes.ok) setVendors(await vendRes.json());
       if (prodRes.ok) setProducts(await prodRes.json());
     } catch (err) {
       console.error(err);
+      setLoadError(true);
     } finally {
       setLoading(false);
       setLoadingStats(false);
@@ -136,9 +146,12 @@ export default function AdminDashboardPage() {
         setVendors(prev => prev.map(v => v.id === vendorId ? { ...v, active: nextActive } : v));
         setActionFeedback(`Barraca ${nextActive ? 'aprovada / ativada na vitrine' : 'pausada da vitrine'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
 
@@ -158,9 +171,12 @@ export default function AdminDashboardPage() {
         // Reload stats
         const statsRes = await fetch(`/api/admin/stats?period=${period}`);
         if (statsRes.ok) setStats(await statsRes.json());
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
 
@@ -176,9 +192,12 @@ export default function AdminDashboardPage() {
         setProducts(prev => prev.map(p => p.id === productId ? { ...p, isActive: nextActive } : p));
         setActionFeedback(`Produto ${nextActive ? 'reativado' : 'ocultado'} com sucesso.`);
         setTimeout(() => setActionFeedback(null), 3000);
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
 
@@ -205,9 +224,12 @@ export default function AdminDashboardPage() {
         } : v));
         setActionFeedback(`Selo 'Orgânico Certificado' aprovado e homologado com sucesso!`);
         setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
 
@@ -236,9 +258,12 @@ export default function AdminDashboardPage() {
         setRejectionReasonInput('');
         setActionFeedback(`Solicitação de certificação orgânica rejeitada com justificativa enviada.`);
         setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
 
@@ -261,11 +286,22 @@ export default function AdminDashboardPage() {
         } : v));
         setActionFeedback(`Selo de certificação orgânica revogado.`);
         setTimeout(() => setActionFeedback(null), 4000);
+      } else {
+        showActionError('Não foi possível concluir a ação. Tente novamente.');
       }
     } catch (err) {
       console.error(err);
+      showActionError('Erro de conexão. Tente novamente.');
     }
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-stone-400 animate-pulse">
+        Carregando painel de administração...
+      </div>
+    );
+  }
 
   if (!isAdmin) {
     return (
@@ -295,10 +331,27 @@ export default function AdminDashboardPage() {
     );
   }
 
-  if (loading || !stats) {
+  if (loading) {
     return (
       <div className="max-w-7xl mx-auto px-4 py-16 text-center text-stone-400 animate-pulse">
         Carregando dados da administração...
+      </div>
+    );
+  }
+
+  if (!stats) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center">
+        <div className="bg-white p-8 rounded-3xl border border-red-200 shadow-md space-y-4">
+          <h2 className="text-xl font-bold text-stone-900">Não foi possível carregar os dados da administração</h2>
+          <p className="text-sm text-stone-500">Verifique a conexão com o servidor e tente novamente.</p>
+          <button
+            onClick={() => { setLoading(true); loadAdminData(); }}
+            className="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs shadow-xs transition cursor-pointer"
+          >
+            Tentar novamente
+          </button>
+        </div>
       </div>
     );
   }
@@ -1358,6 +1411,12 @@ export default function AdminDashboardPage() {
           )}
         </div>
       </div>
+
+      {actionError && (
+        <div className="p-3.5 rounded-2xl bg-red-50 border border-red-200 text-red-700 text-xs font-bold animate-in fade-in">
+          {actionError}
+        </div>
+      )}
 
       {actionFeedback && (
         <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold flex items-center gap-2 animate-in fade-in">

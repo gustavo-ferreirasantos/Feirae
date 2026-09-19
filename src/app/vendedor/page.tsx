@@ -86,7 +86,7 @@ interface FinancialStats {
 }
 
 export default function VendorDashboardPage() {
-  const { currentUser, currentVendor, updateCurrentVendor, availableVendors } = useUser();
+  const { currentUser, currentVendor, updateCurrentVendor, availableVendors, isLoaded } = useUser();
   const [activeTab, setActiveTab] = useState<'KANBAN' | 'AUDIT' | 'PRODUCTS' | 'WINDOWS' | 'REVIEWS' | 'FINANCIAL' | 'CERTIFICATIONS'>('KANBAN');
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -179,7 +179,7 @@ export default function VendorDashboardPage() {
   const [reviewFilter, setReviewFilter] = useState<'ALL' | 'PENDING' | 'ANSWERED'>('ALL');
 
   const isVendor = currentUser?.role === 'VENDOR';
-  const activeVendor = currentVendor || availableVendors.find(v => v.userId === currentUser?.id) || (availableVendors.length > 0 ? availableVendors[0] : null);
+  const activeVendor = currentVendor || availableVendors.find(v => v.userId === currentUser?.id) || null;
   const activeVendorId = activeVendor?.id || currentVendor?.id || '';
 
   // Synchronize bio and certification initial state when currentVendor changes
@@ -375,6 +375,7 @@ export default function VendorDashboardPage() {
   }, [activeVendorId, isVendor, financeDateFilter]);
 
   const handleUpdateOrderStatus = async (orderId: string, status: OrderStatus) => {
+    const previousOrders = orders;
     setOrders(prev => prev.map(o => (o.id === orderId || o.orderNumber === orderId || o.orderNumber === orderId.replace('#', '')) ? { ...o, status } : o));
 
     try {
@@ -387,9 +388,15 @@ export default function VendorDashboardPage() {
         const updated = await res.json();
         setOrders(prev => prev.map(o => (o.id === orderId || o.id === updated.id || o.orderNumber === updated.orderNumber) ? { ...o, ...updated } : o));
         fetchFinanceStats(financeDateFilter);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setOrders(previousOrders);
+        alert(data.error || 'Não foi possível atualizar o status do pedido.');
       }
     } catch (err) {
       console.error('Erro ao atualizar status do pedido:', err);
+      setOrders(previousOrders);
+      alert('Erro de conexão ao atualizar o status do pedido.');
     }
   };
 
@@ -826,6 +833,14 @@ export default function VendorDashboardPage() {
       alert('Erro de conexão ao excluir resposta.');
     }
   };
+
+  if (!isLoaded) {
+    return (
+      <div className="max-w-7xl mx-auto px-4 py-16 text-center text-stone-400 animate-pulse">
+        Carregando painel do feirante...
+      </div>
+    );
+  }
 
   // Route Protection for Non-Vendors
   if (!isVendor) {

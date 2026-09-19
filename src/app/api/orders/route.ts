@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
 import { Prisma } from '@prisma/client';
+import { randomInt } from 'crypto';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,8 +15,6 @@ export async function GET(request: Request) {
     const andClauses: Prisma.OrderWhereInput[] = [];
 
     if (clientId && clientId !== 'ALL') {
-      const isDefaultDemoClient = clientId === 'user-client-1' || clientId.includes('client');
-      
       const userOrConditions: Prisma.UserWhereInput[] = [
         { id: clientId },
         { email: { equals: clientId, mode: 'insensitive' } },
@@ -23,12 +22,6 @@ export async function GET(request: Request) {
 
       if (clientEmail) {
         userOrConditions.push({ email: { equals: clientEmail, mode: 'insensitive' } });
-      }
-
-      if (isDefaultDemoClient) {
-        userOrConditions.push({ role: 'CLIENT' });
-        userOrConditions.push({ email: { contains: 'maria', mode: 'insensitive' } });
-        userOrConditions.push({ email: { contains: 'cliente', mode: 'insensitive' } });
       }
 
       const matchingUsers = await prisma.user.findMany({
@@ -45,11 +38,6 @@ export async function GET(request: Request) {
         { clientId: { in: clientIds } },
         ...(clientEmails.length > 0 ? [{ clientEmail: { in: clientEmails } }] : []),
       ];
-
-      if (isDefaultDemoClient) {
-        clientOrConditions.push({ clientEmail: { contains: 'maria', mode: 'insensitive' } });
-        clientOrConditions.push({ clientEmail: { contains: 'cliente', mode: 'insensitive' } });
-      }
 
       andClauses.push({ OR: clientOrConditions });
     }
@@ -110,9 +98,39 @@ export async function GET(request: Request) {
   }
 }
 
+class OrderInputError extends Error {
+  constructor(message: string, public status = 400) {
+    super(message);
+  }
+}
+
+const PAYMENT_METHODS = ['RETIRADA', 'MERCADO_PAGO_PIX', 'MERCADO_PAGO_CARTAO'] as const;
+
+async function generateOrderNumber(): Promise<string> {
+  const year = new Date().getFullYear();
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const candidate = `FE-${year}-${randomInt(100000, 1000000)}`;
+    const taken = await prisma.order.findUnique({ where: { orderNumber: candidate }, select: { id: true } });
+    if (!taken) return candidate;
+  }
+  throw new OrderInputError('Não foi possível gerar o número do pedido. Tente novamente.', 503);
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+
+    const requestedItems: { productId?: string; productName?: string; quantity: number }[] = Array.isArray(body.items)
+      ? body.items
+      : [];
+    if (requestedItems.length === 0) {
+      throw new OrderInputError('O pedido precisa ter pelo menos um item.');
+    }
+
+    const paymentMethod = body.paymentMethod || 'RETIRADA';
+    if (!PAYMENT_METHODS.includes(paymentMethod)) {
+      throw new OrderInputError('Forma de pagamento inválida.');
+    }
 
     const vendorWhereConditions: Prisma.VendorWhereInput[] = [
       { id: body.vendorId },
@@ -123,167 +141,164 @@ export async function POST(request: Request) {
       vendorWhereConditions.push({ businessName: { equals: body.vendorName, mode: 'insensitive' } });
     }
 
-    const vendor = await prisma.vendor.findFirst({
-      where: {
-        OR: vendorWhereConditions,
-      },
-    });
-
+    const vendor = await prisma.vendor.findFirst({ where: { OR: vendorWhereConditions } });
     if (!vendor) {
-      return NextResponse.json({ error: 'Feirante não encontrado no banco de dados.' }, { status: 404 });
+      throw new OrderInputError('Feirante não encontrado no banco de dados.', 404);
+    }
+    if (!vendor.active) {
+      throw new OrderInputError('Esta barraca não está aceitando pedidos no momento.');
     }
 
-    // Validate items and calculate total
-    let calculatedTotal = 0;
-    const itemsToCreate = [];
+    // Resolve client user so the FK relation is always valid
+    const cleanEmail = (body.clientEmail || '').trim().toLowerCase();
+    const clientLookup: Prisma.UserWhereInput[] = [];
+    if (body.clientId) clientLookup.push({ id: body.clientId });
+    if (cleanEmail) clientLookup.push({ email: cleanEmail });
+    const existingClient = clientLookup.length > 0
+      ? await prisma.user.findFirst({ where: { OR: clientLookup } })
+      : null;
 
-    for (const it of body.items) {
-      const product = await prisma.product.findFirst({
-        where: {
-          OR: [
-            { id: it.productId },
-            { vendorId: vendor.id, name: { equals: it.productName, mode: 'insensitive' } },
-          ],
-        },
-      });
-
-      if (!product) {
-        throw new Error(`Produto não encontrado no banco de dados.`);
-      }
-
-      if (product.stock < it.quantity) {
-        return NextResponse.json({
-          error: `Estoque insuficiente para "${product.name}". Disponível: ${product.stock}`,
-        }, { status: 400 });
-      }
-
-      const subtotal = Math.round((product.price * it.quantity) * 100) / 100;
-      calculatedTotal = Math.round((calculatedTotal + subtotal) * 100) / 100;
-      itemsToCreate.push({
-        productId: product.id,
-        productName: product.name,
-        productUnit: product.unit,
-        unitPrice: product.price,
-        quantity: it.quantity,
-        subtotal,
-      });
-
-      // Decrement stock in DB
-      await prisma.product.update({
-        where: { id: product.id },
-        data: { stock: { decrement: it.quantity } },
-      });
-    }
-
-    // Validate coupon if provided
-    let discountAmount = 0;
-    let finalTotal = Math.round(calculatedTotal * 100) / 100;
-    let appliedCouponCode: string | null = null;
-
-    if (body.couponCode) {
-      const formattedCode = body.couponCode.trim().toUpperCase();
-      const coupon = await prisma.coupon.findUnique({ where: { code: formattedCode } });
-
-      if (!coupon || !coupon.active) {
-        return NextResponse.json({ error: 'Cupom inválido ou inativo.' }, { status: 400 });
-      }
-      if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) {
-        return NextResponse.json({ error: 'Este cupom está expirado.' }, { status: 400 });
-      }
-      if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
-        return NextResponse.json({ error: 'Este cupom já atingiu o limite de utilizações.' }, { status: 400 });
-      }
-      if (calculatedTotal < coupon.minOrderValue) {
-        return NextResponse.json({
-          error: `O valor mínimo para utilizar este cupom é de R$ ${coupon.minOrderValue.toFixed(2).replace('.', ',')}.`,
-        }, { status: 400 });
-      }
-      if (coupon.vendorId && coupon.vendorId !== vendor.id) {
-        return NextResponse.json({ error: 'Este cupom é exclusivo para outra banca.' }, { status: 400 });
-      }
-
-      appliedCouponCode = coupon.code;
-      if (coupon.discountType === 'PERCENTAGE') {
-        discountAmount = Math.round((calculatedTotal * (coupon.discountValue / 100)) * 100) / 100;
-      } else {
-        discountAmount = Math.min(calculatedTotal, coupon.discountValue);
-      }
-      finalTotal = Math.max(0, Math.round((calculatedTotal - discountAmount) * 100) / 100);
-
-      await prisma.coupon.update({
-        where: { id: coupon.id },
-        data: { usedCount: { increment: 1 } },
-      });
-    }
-
-    const orderNum = `FL-2026-${Math.floor(1000 + Math.random() * 9000)}`;
-
-    // Resolve client user in DB so FK relation is always valid
-    let dbClientId = body.clientId;
-    const existingClient = await prisma.user.findFirst({
-      where: {
-        OR: [
-          { id: body.clientId },
-          { email: (body.clientEmail || '').trim().toLowerCase() },
-        ],
-      },
-    });
-
+    let dbClientId: string;
     if (existingClient) {
       dbClientId = existingClient.id;
     } else {
-      try {
-        const cleanMail = (body.clientEmail || `cliente-${Date.now()}@feirae.com`).trim().toLowerCase();
-        const newClient = await prisma.user.create({
-          data: {
-            name: body.clientName || 'Cliente Consumidor',
-            email: cleanMail,
-            phone: body.clientPhone || null,
-            role: 'CLIENT',
-          },
-        });
-        dbClientId = newClient.id;
-      } catch {
-        const firstClient = await prisma.user.findFirst({ where: { role: 'CLIENT' } });
-        if (firstClient) dbClientId = firstClient.id;
-      }
+      const newClient = await prisma.user.create({
+        data: {
+          name: body.clientName || 'Cliente Consumidor',
+          email: cleanEmail || `cliente-${Date.now()}@feirae.com`,
+          phone: body.clientPhone || null,
+          role: 'CLIENT',
+        },
+      }).catch(() => {
+        throw new OrderInputError('Não foi possível identificar o cliente do pedido.');
+      });
+      dbClientId = newClient.id;
     }
 
-    const createdOrder = await prisma.order.create({
-      data: {
-        orderNumber: orderNum,
-        clientId: dbClientId,
-        clientName: body.clientName,
-        clientPhone: body.clientPhone,
-        clientEmail: body.clientEmail,
-        vendorId: vendor.id,
-        totalAmount: finalTotal,
-        couponCode: appliedCouponCode,
-        discountAmount: discountAmount,
-        originalAmount: Math.round(calculatedTotal * 100) / 100,
-        status: 'NOVO',
-        paymentMethod: body.paymentMethod || 'RETIRADA',
-        paymentStatus: body.paymentMethod === 'RETIRADA' ? 'PAGO_NA_RETIRADA' : 'PENDENTE',
-        pickupDate: body.pickupDate,
-        pickupLocation: body.pickupLocation,
-        notes: body.notes || null,
-        items: {
-          create: itemsToCreate,
-        },
-      },
-      include: {
-        items: true,
-        vendor: { select: { businessName: true } },
-        review: true,
-      },
-    });
+    const orderNum = await generateOrderNumber();
 
-    // Create Notifications
+    const createdOrder = await prisma.$transaction(async (tx) => {
+      let calculatedTotal = 0;
+      const itemsToCreate: Prisma.OrderItemUncheckedCreateWithoutOrderInput[] = [];
+
+      for (const it of requestedItems) {
+        const quantity = Number(it.quantity);
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          throw new OrderInputError('Quantidade inválida: informe um valor maior que zero.');
+        }
+        if (!Number.isInteger(quantity)) {
+          throw new OrderInputError('Quantidade fracionada ainda não é suportada pelo banco de dados. Use quantidades inteiras.');
+        }
+
+        const product = await tx.product.findFirst({
+          where: {
+            OR: [
+              { id: it.productId },
+              ...(it.productName ? [{ vendorId: vendor.id, name: { equals: it.productName, mode: 'insensitive' as const } }] : []),
+            ],
+          },
+        });
+
+        if (!product || product.vendorId !== vendor.id || !product.isActive) {
+          throw new OrderInputError('Produto não encontrado ou indisponível nesta barraca.', 404);
+        }
+
+        // Conditional decrement: only succeeds while enough stock remains (safe under concurrent orders)
+        const reserved = await tx.product.updateMany({
+          where: { id: product.id, stock: { gte: quantity } },
+          data: { stock: { decrement: quantity } },
+        });
+        if (reserved.count === 0) {
+          const fresh = await tx.product.findUnique({ where: { id: product.id }, select: { stock: true } });
+          throw new OrderInputError(`Estoque insuficiente para "${product.name}". Disponível: ${fresh?.stock ?? 0}`);
+        }
+
+        const subtotal = Math.round(product.price * quantity * 100) / 100;
+        calculatedTotal = Math.round((calculatedTotal + subtotal) * 100) / 100;
+        itemsToCreate.push({
+          productId: product.id,
+          productName: product.name,
+          productUnit: product.unit,
+          unitPrice: product.price,
+          quantity,
+          subtotal,
+        });
+      }
+
+      let discountAmount = 0;
+      let finalTotal = calculatedTotal;
+      let appliedCouponCode: string | null = null;
+
+      if (body.couponCode) {
+        const formattedCode = String(body.couponCode).trim().toUpperCase();
+        const coupon = await tx.coupon.findUnique({ where: { code: formattedCode } });
+
+        if (!coupon || !coupon.active) throw new OrderInputError('Cupom inválido ou inativo.');
+        if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() < Date.now()) {
+          throw new OrderInputError('Este cupom está expirado.');
+        }
+        if (coupon.maxUses !== null && coupon.usedCount >= coupon.maxUses) {
+          throw new OrderInputError('Este cupom já atingiu o limite de utilizações.');
+        }
+        if (calculatedTotal < coupon.minOrderValue) {
+          throw new OrderInputError(
+            `O valor mínimo para utilizar este cupom é de R$ ${coupon.minOrderValue.toFixed(2).replace('.', ',')}.`
+          );
+        }
+        if (coupon.vendorId && coupon.vendorId !== vendor.id) {
+          throw new OrderInputError('Este cupom é exclusivo para outra banca.');
+        }
+
+        const consumed = await tx.coupon.updateMany({
+          where: {
+            id: coupon.id,
+            active: true,
+            ...(coupon.maxUses !== null && { usedCount: { lt: coupon.maxUses } }),
+          },
+          data: { usedCount: { increment: 1 } },
+        });
+        if (consumed.count === 0) throw new OrderInputError('Este cupom já atingiu o limite de utilizações.');
+
+        appliedCouponCode = coupon.code;
+        discountAmount = coupon.discountType === 'PERCENTAGE'
+          ? Math.round(calculatedTotal * (coupon.discountValue / 100) * 100) / 100
+          : Math.min(calculatedTotal, coupon.discountValue);
+        finalTotal = Math.max(0, Math.round((calculatedTotal - discountAmount) * 100) / 100);
+      }
+
+      return tx.order.create({
+        data: {
+          orderNumber: orderNum,
+          clientId: dbClientId,
+          clientName: body.clientName,
+          clientPhone: body.clientPhone,
+          clientEmail: body.clientEmail,
+          vendorId: vendor.id,
+          totalAmount: finalTotal,
+          couponCode: appliedCouponCode,
+          discountAmount,
+          originalAmount: calculatedTotal,
+          status: 'NOVO',
+          paymentMethod,
+          paymentStatus: paymentMethod === 'RETIRADA' ? 'PAGO_NA_RETIRADA' : 'PENDENTE',
+          pickupDate: body.pickupDate,
+          pickupLocation: body.pickupLocation,
+          notes: body.notes || null,
+          items: { create: itemsToCreate },
+        },
+        include: {
+          items: true,
+          vendor: { select: { businessName: true } },
+          review: true,
+        },
+      });
+    }, { maxWait: 10000, timeout: 20000 });
+
     await prisma.notification.create({
       data: {
         userId: vendor.userId,
         title: 'Novo Pré-pedido Recebido!',
-        message: `${body.clientName} realizou o pedido #${orderNum} no valor de R$ ${finalTotal.toFixed(2)}.`,
+        message: `${body.clientName} realizou o pedido #${orderNum} no valor de R$ ${createdOrder.totalAmount.toFixed(2)}.`,
         type: 'NEW_ORDER',
         orderId: createdOrder.id,
       },
@@ -295,7 +310,10 @@ export async function POST(request: Request) {
       vendorName: createdOrder.vendor?.businessName,
     }, { status: 201 });
   } catch (err: any) {
+    if (err instanceof OrderInputError) {
+      return NextResponse.json({ error: err.message }, { status: err.status });
+    }
     console.error('Error in POST /api/orders:', err);
-    return NextResponse.json({ error: err?.message || 'Erro ao processar pré-pedido no banco de dados.' }, { status: 500 });
+    return NextResponse.json({ error: 'Erro ao processar pré-pedido no banco de dados.' }, { status: 500 });
   }
 }

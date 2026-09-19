@@ -114,9 +114,8 @@ export async function GET(request: Request) {
       orderCount: stats.orderCount,
     }));
 
-    if (recentFairs.length > 4) {
-      recentFairs = recentFairs.slice(-4);
-    }
+    // allDbOrders is newest-first: keep the 4 most recent fairs, shown oldest to newest
+    recentFairs = recentFairs.slice(0, 4).reverse();
 
     return NextResponse.json({
       vendor: {

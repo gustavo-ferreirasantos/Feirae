@@ -79,6 +79,33 @@ export async function PATCH(
       return NextResponse.json({ error: 'Pedido não encontrado no banco de dados.' }, { status: 404 });
     }
 
+    const ALLOWED_NEXT: Record<string, string[]> = {
+      NOVO: ['EM_PREPARO', 'CANCELADO'],
+      EM_PREPARO: ['PRONTO', 'CANCELADO'],
+      PRONTO: ['RETIRADO', 'CANCELADO'],
+      RETIRADO: [],
+      CANCELADO: [],
+    };
+
+    if (status !== undefined && status !== null) {
+      if (!Object.prototype.hasOwnProperty.call(ALLOWED_NEXT, status)) {
+        return NextResponse.json({ error: 'Status de pedido inválido.' }, { status: 400 });
+      }
+      if (status !== existingOrder.status && !ALLOWED_NEXT[existingOrder.status].includes(status)) {
+        return NextResponse.json(
+          { error: `Não é possível mover o pedido de ${existingOrder.status} para ${status}.` },
+          { status: 400 }
+        );
+      }
+    }
+
+    const weightsToCheck: unknown[] = [];
+    if (itemId && measuredWeight !== undefined) weightsToCheck.push(measuredWeight);
+    if (Array.isArray(items)) items.forEach((it: any) => it?.measuredWeight !== undefined && weightsToCheck.push(it.measuredWeight));
+    if (weightsToCheck.some(w => !Number.isFinite(Number(w)) || Number(w) < 0)) {
+      return NextResponse.json({ error: 'Peso medido inválido: informe um número maior ou igual a zero.' }, { status: 400 });
+    }
+
     // A. Handle item measured weight update
     if (itemId && measuredWeight !== undefined) {
       const itemToUpdate = existingOrder.items.find(it => it.id === itemId);
@@ -127,7 +154,7 @@ export async function PATCH(
     }
 
     // B. Handle status update if provided
-    if (status) {
+    if (status && status !== existingOrder.status) {
       const isNowCancelled = status === 'CANCELADO' && existingOrder.status !== 'CANCELADO';
 
       if (isNowCancelled) {
