@@ -560,7 +560,7 @@ export default function AdminDashboardPage() {
       'Status do Pedido',
       'Valor do Pedido (R$)',
       'Taxa Plataforma (%)',
-      'Comissao Feirae (R$)',
+      'Comissão Feiraê (R$)',
       'Repasse Liquido Feirante (R$)'
     ];
 
@@ -735,7 +735,7 @@ export default function AdminDashboardPage() {
     const periodLabel = period === '7d' ? 'Últimos 7 dias' : period === '30d' ? 'Últimos 30 dias' : 'Geral (Acumulado)';
 
     const rows = [
-      ['"RELATORIO EXECUTIVO & FINANCEIRO - FEIRAE"'],
+      ['"RELATORIO EXECUTIVO & FINANCEIRO - FEIRAÊ"'],
       [`"Data de Emissao";"${dateFormatted}"`],
       [`"Periodo de Referencia";"${periodLabel}"`],
       [''],
@@ -1826,7 +1826,7 @@ export default function AdminDashboardPage() {
                   : 'bg-stone-50 hover:bg-stone-100 text-stone-700 border-stone-200'
               }`}
             >
-              Feirae Atual (0% + 15 Pro)
+              Feiraê Atual (0% + 15 Pro)
             </button>
             <button
               onClick={() => applyPreset(45000, 2.5, 25)}
@@ -1928,7 +1928,7 @@ export default function AdminDashboardPage() {
                   </label>
                   <span className="text-[11px] text-stone-500 block">
                     {simulatedCommissionRate === 0 
-                      ? '0% • Modelo Feirae (zero comissão sobre a colheita do produtor)'
+                      ? '0% • Modelo Feiraê (zero comissão sobre a colheita do produtor)'
                       : `${simulatedCommissionRate}% retido sobre cada pedido gerado`}
                   </span>
                 </div>
@@ -2064,7 +2064,7 @@ export default function AdminDashboardPage() {
                 <span className="text-purple-700 font-black text-sm">{projectedTakeRate.toFixed(1)}%</span>
               </div>
               <p className="text-[11px] text-stone-500 leading-relaxed">
-                O Take Rate representa a porcentagem do GMV total transacionado na feira que se converte em faturamento para o Feirae.
+                O Take Rate representa a porcentagem do GMV total transacionado na feira que se converte em faturamento para o Feiraê.
               </p>
             </div>
 
@@ -2225,7 +2225,7 @@ export default function AdminDashboardPage() {
             Painel Geral de Gestão da Feira
           </div>
           <h1 className="text-2xl sm:text-3xl font-extrabold text-stone-900">
-            Administração da Feirae
+            Administração do Feiraê
           </h1>
           <p className="text-xs sm:text-sm text-stone-500 mt-1">
             Moderação de barracas, controle de produtos e métricas de produto (Product Analytics & AARRR).
@@ -2609,7 +2609,7 @@ export default function AdminDashboardPage() {
             <div className="bg-white rounded-3xl border border-stone-200 p-6 shadow-xs space-y-3">
               <h3 className="font-extrabold text-stone-900 text-base">Faturamento & Monetização da Feira</h3>
               <p className="text-xs text-stone-600 leading-relaxed">
-                A <strong>Feirae</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90), <strong>Destaques Patrocinados</strong> (R$ 29,90/semana) e <strong>Comissões Simuladas</strong> de vendedores padrão (10% demonstrativo).
+                O <strong>Feiraê</strong> monetiza com <strong>Assinatura Fixa Mensal</strong> (R$ 49,90), <strong>Destaques Patrocinados</strong> (R$ 29,90/semana) e <strong>Comissões Simuladas</strong> de vendedores padrão (10% demonstrativo).
               </p>
               <div className="p-4 rounded-2xl bg-stone-50 border border-stone-200/80 text-xs text-stone-700 space-y-1.5">
                 <div className="flex justify-between font-semibold">

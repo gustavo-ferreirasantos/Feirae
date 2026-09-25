@@ -43,7 +43,7 @@ export function MercadoPagoModal({
   itemDescription,
   initialTab = 'PIX',
   clientId = 'user-client-1',
-  clientName = 'Cliente Feirae',
+  clientName = 'Cliente Feiraê',
   clientEmail = 'cliente@feirae.com',
   onSuccess,
   onClose,

@@ -232,7 +232,7 @@ export async function GET(request: Request) {
       const emailKey = (o.clientEmail || o.clientId || 'desconhecido').toLowerCase().trim();
       if (!customerMap.has(emailKey)) {
         customerMap.set(emailKey, {
-          name: o.clientName || 'Cliente Feirae',
+          name: o.clientName || 'Cliente Feiraê',
           email: o.clientEmail || '',
           orderDates: [],
         });

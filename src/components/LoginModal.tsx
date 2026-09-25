@@ -143,7 +143,7 @@ export function LoginModal({ isOpen, onClose, defaultTab = 'LOGIN' }: LoginModal
             </div>
             <div>
               <h3 className="font-bold text-lg leading-tight">
-                {activeTab === 'LOGIN' ? 'Acessar Feirae' : 'Criar Nova Conta'}
+                {activeTab === 'LOGIN' ? 'Acessar Feiraê' : 'Criar Nova Conta'}
               </h3>
               <p className="text-xs text-white/80">
                 {activeTab === 'LOGIN' 
@@ -517,7 +517,7 @@ export function LoginModal({ isOpen, onClose, defaultTab = 'LOGIN' }: LoginModal
 
         {/* Footer */}
         <div className="p-3.5 bg-stone-50 border-t border-stone-100 flex items-center justify-between text-xs text-stone-500 shrink-0">
-          <span>Feirae • Conectando feirantes e clientes</span>
+          <span>Feiraê • Conectando feirantes e clientes</span>
           <button
             type="button"
             onClick={onClose}

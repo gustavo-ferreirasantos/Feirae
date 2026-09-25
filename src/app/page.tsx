@@ -119,7 +119,7 @@ export default function HomePage() {
             </div>
             
             <h1 className="text-3xl sm:text-5xl font-extrabold text-stone-900 tracking-tight leading-tight">
-              Faça seu pré-pedido na <span className="text-feira-600">feira local</span> e retire sem filas.
+              Faça seu pré-pedido no <span className="text-feira-600">Feiraê</span> e retire sem filas.
             </h1>
             
             <p className="mt-4 text-base sm:text-lg text-stone-600 leading-relaxed">
@@ -369,7 +369,7 @@ export default function HomePage() {
       <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="bg-gradient-to-tr from-stone-900 to-stone-800 text-white rounded-3xl p-8 sm:p-12 shadow-xl relative overflow-hidden">
           <div className="max-w-2xl">
-            <span className="text-xs font-bold uppercase tracking-wider text-feira-400">Como funciona o Feirae</span>
+            <span className="text-xs font-bold uppercase tracking-wider text-feira-400">Como funciona o Feiraê</span>
             <h2 className="text-2xl sm:text-3xl font-extrabold mt-2 leading-tight">
               Apoie o pequeno comércio com 3 passos simples
             </h2>

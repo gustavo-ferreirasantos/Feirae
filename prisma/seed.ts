@@ -3,7 +3,7 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log('🌱 Iniciando Seed estruturado e completo no banco de dados Feirae...');
+  console.log('🌱 Iniciando Seed estruturado e completo no banco de dados Feiraê...');
 
   // 0. Limpar tabelas existentes em ordem de integridade referencial
   await prisma.notification.deleteMany();

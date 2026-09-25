@@ -2707,7 +2707,7 @@ export default function VendorDashboardPage() {
           <div className="hidden print:block border-b-2 border-stone-800 pb-4 mb-6">
             <div className="flex justify-between items-start">
               <div>
-                <h1 className="text-2xl font-black text-stone-900 tracking-tight">Feirae • Fechamento de Caixa</h1>
+                <h1 className="text-2xl font-black text-stone-900 tracking-tight">Feiraê • Fechamento de Caixa</h1>
                 <p className="text-xs text-stone-600 mt-0.5">Comprovante e Extrato Financeiro Consolidado da Barraca</p>
               </div>
               <div className="text-right text-xs text-stone-500">
@@ -3272,7 +3272,7 @@ export default function VendorDashboardPage() {
                     </div>
 
                     <span className="text-xs text-amber-800 font-medium">
-                      Fila de Moderação da Feirae
+                      Fila de Moderação do Feiraê
                     </span>
                   </div>
 

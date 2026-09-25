@@ -46,7 +46,7 @@ export function getOrderWhatsAppContactLink(order: Order, vendorPhoneOverride?: 
     ? order.items.map(i => `• ${i.quantity}x ${i.productName}`).join('\n')
     : 'Nenhum item listado';
 
-  const message = `Olá! Gostaria de falar sobre o meu pedido *#${order.orderNumber}* na barraca *${order.vendorName || 'Feirae'}*.\n\n` +
+  const message = `Olá! Gostaria de falar sobre o meu pedido *#${order.orderNumber}* na barraca *${order.vendorName || 'Feiraê'}*.\n\n` +
     `📋 *Itens do Pedido:*\n${itemsText}\n\n` +
     `💰 *Valor Total:* ${formatCurrency(order.totalAmount)}\n` +
     `📍 *Retirada:* ${order.pickupDate || 'Na feira'} (${order.pickupLocation || 'Local da feira'})`;
@@ -68,7 +68,7 @@ export function getPickupPassWhatsAppLink(order: Order, vendorPhone?: string): s
     ? order.items.map(i => `• ${i.quantity}x ${i.productName}`).join('\n')
     : '';
 
-  const message = `Olá! Gostaria de confirmar meu pré-pedido *#${order.orderNumber}* na *${order.vendorName || 'Feirae'}*.\n\n` +
+  const message = `Olá! Gostaria de confirmar meu pré-pedido *#${order.orderNumber}* na *${order.vendorName || 'Feiraê'}*.\n\n` +
     `📋 *Resumo do Pedido:*\n${itemsText}\n\n` +
     `💰 *Valor Total:* ${formatCurrency(order.totalAmount)}\n` +
     `📍 *Retirada:* ${order.pickupDate} (${order.pickupLocation})\n\n` +
